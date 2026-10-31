@@ -307,23 +307,19 @@ def paso_tiendas():
         | {"Ahorro vs. más caro": st.column_config.NumberColumn(format="$%.2f")},
     )
 
-    st.subheader(f"🏪 {len(visibles)} tiendas cercanas con precios")
-    lista = []
-    for t in visibles:
-        r = resumen[u.categoria(t)]
-        lista.append({
-            "Tienda": t["nombre"], "Tipo": u.categoria(t), "Distancia": f"{t['distancia_km']} km",
-            "Tus productos": round(r["total"], 2), "Con precio": f"{r['con_precio']} de {nprod}",
-            "Cómo llegar": u.enlace_mapa(t["lat"], t["lon"], t["nombre"]),
-        })
-    lista.sort(key=lambda x: (-int(x["Con precio"].split()[0]), x["Tus productos"], float(x["Distancia"].split()[0])))
-    st.dataframe(
-        lista, hide_index=True, width="stretch", height=alto(lista),
-        column_config={"Tienda": st.column_config.TextColumn(width="large"),
-                       "Tipo": st.column_config.TextColumn(width="medium"),
-                       "Tus productos": st.column_config.NumberColumn(format="$%.2f"),
-                       "Cómo llegar": st.column_config.LinkColumn(display_text="Abrir mapa")},
-    )
+    mas_cercana = {}  # una por cadena: la más cercana
+    for t in sorted(visibles, key=lambda t: t["distancia_km"]):
+        mas_cercana.setdefault(u.categoria(t), t)
+    with st.expander(f"🏪 Ver tiendas cercanas ({len(mas_cercana)})"):
+        lista = [{"Tienda": t["nombre"], "Tipo": tipo, "Distancia": t["distancia_km"],
+                  "Cómo llegar": u.enlace_mapa(t["lat"], t["lon"], t["nombre"])} for tipo, t in mas_cercana.items()]
+        st.dataframe(
+            lista, hide_index=True, width="stretch", height=alto(lista),
+            column_config={"Tienda": st.column_config.TextColumn(width="large"),
+                           "Distancia": st.column_config.NumberColumn(format="%.2f km"),
+                           "Cómo llegar": st.column_config.LinkColumn(display_text="Abrir mapa")},
+        )
+        st.caption("La más cercana de cada cadena.")
     with st.expander("Ver el precio de hoy en la web de cada tienda"):
         for f in filas:
             enlaces = " · ".join(f"[{t}]({u.enlace_precio(f['Producto'], t)})" for t in cats)
@@ -404,7 +400,54 @@ def paso_lista():
     st.subheader("💡 Consejos para ahorrar")
     for c in plan.consejos:
         st.markdown(f"- {c}")
+
+    seccion_recetario(plan)
     st.button("🍳 ¿Qué cocino hoy con lo que tengo?", on_click=ir, args=("recetas",), width="stretch")
+
+
+def seccion_recetario(plan):
+    """Una receta saludable por semana con lo comprado, para el calendario del celular."""
+    from datetime import date, timedelta
+
+    with st.container(border=True):
+        st.subheader("🥗 Una receta saludable cada semana")
+        st.write("Crea 4 recetas con lo que vas a comprar y añádelas a tu calendario: "
+                 "cada semana te llegará un aviso con la receta.")
+        hoy = date.today()
+        proximo_domingo = hoy + timedelta(days=(6 - hoy.weekday()) or 7)
+        c1, c2 = st.columns(2)
+        primer_dia = c1.date_input("Primer aviso", value=proximo_domingo, min_value=hoy, format="DD/MM/YYYY")
+        hora = c2.selectbox("Hora del aviso", list(range(6, 21)), index=3, format_func=lambda h: f"{h}:00")
+        if st.button("Crear mis 4 recetas semanales", type="primary"):
+            if puede_consultar():
+                cliente = obtener_cliente()
+                with st.spinner("Creando tus recetas de la semana… unos 20 segundos"):
+                    try:
+                        st.session_state["recetario"], _ = n.generar_recetario(
+                            cliente, plan.items, st.session_state["personas"], st.session_state["restricciones"])
+                    except n.ErrorIA as e:
+                        st.error(str(e))
+        rec = st.session_state.get("recetario")
+        if not rec:
+            return
+        pestanas = st.tabs([f"Semana {s.semana}" for s in rec.semanas])
+        for tab, s in zip(pestanas, rec.semanas):
+            r = s.receta
+            with tab:
+                fecha = primer_dia + timedelta(weeks=s.semana - 1)
+                st.markdown(f"**{r.nombre}** · {fecha:%d/%m} · {r.porciones} porciones · {r.tiempo_minutos} min · "
+                            f"~{r.calorias_aprox_por_porcion} kcal y {r.proteina_g_aprox_por_porcion} g de proteína por porción")
+                st.markdown("**Ingredientes:** " + ", ".join(r.ingredientes_que_tienes))
+                for i, p in enumerate(r.pasos, 1):
+                    st.markdown(f"{i}. {p}")
+                st.caption("💚 " + r.por_que_es_nutritiva)
+        d1, d2 = st.columns(2)
+        d1.download_button("📅 Añadir a mi calendario", n.recetario_ics(rec, primer_dia, hora).encode("utf-8"),
+                           "recetas_semanales.ics", "text/calendar", width="stretch", type="primary")
+        d2.download_button("Descargar recetas (TXT)", n.recetario_texto(rec).encode("utf-8"),
+                           "recetas_semanales.txt", "text/plain", width="stretch")
+        st.caption("En el celular, abre el archivo descargado y elige tu calendario (Google Calendar o Calendario). "
+                   "Recibirás un aviso cada semana con la receta.")
 
 
 # ---------------------------------------------------------------------------

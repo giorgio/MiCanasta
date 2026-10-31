@@ -17,11 +17,11 @@ Hogares de la costa ecuatoriana (por ejemplo, en Guayaquil) con un presupuesto f
 
 - **📍 Tiendas cerca de ti:** con el GPS del celular o la ciudad, muestra en un mapa fijo (sin mover ni zoom) las tiendas reales cercanas en verde y tu ubicación en rojo (OpenStreetMap), con distancia y enlace para llegar.
 - **📊 Comparación automática:** al encontrar las tiendas cercanas, la app compara tus productos en cada tipo de tienda (mercado, Tía, Mi Comisariato, Akí, Supermaxi, Coral, TuTi…) y deja fuera las que no tienen precios. Ves el precio estimado de cada uno en cada tienda, cuál es la más barata, el ahorro y el total por tienda.
-- **Ver precio hoy:** cada producto de la lista tiene un enlace que abre la búsqueda de ese producto en la web de la tienda (Tía) o en Google, para confirmar el precio actual.
+- **🥗 Una receta saludable cada semana:** con los productos de la lista crea 4 recetas (una por semana) y las entrega como archivo de calendario (.ics): al abrirlo en el celular, cada semana llega un aviso con la receta.
 
 | Pestaña | Entrada | Salida |
 |---|---|---|
-| 🧾 Mi compra del mes | Presupuesto (USD), personas, comidas al día, tiendas, restricciones, lo que ya hay en casa, precios conocidos | Lista por tienda con cantidades, precio y subtotal; total, sobrante y gráfico por tienda; menú semanal de ejemplo; consejos; descarga CSV y TXT |
+| 🧾 Mi compra del mes | Presupuesto (USD), personas, comidas al día, tiendas, restricciones, lo que ya hay en casa, precios conocidos | Lista por tienda con cantidades, precio y subtotal; total y sobrante; menú semanal de ejemplo; consejos; descarga para imprimir |
 | 📊 Comparar precios | Productos, tiendas, ciudad, precios vistos | Tabla producto × tienda, tienda más barata, ahorro, total por tienda, enlaces y CSV |
 | 🍳 ¿Qué cocino hoy? | Ingredientes disponibles, personas, restricciones | 3 recetas con pasos, lo que falta comprar y su costo, calorías y proteína aproximadas |
 
@@ -29,7 +29,7 @@ Hogares de la costa ecuatoriana (por ejemplo, en Guayaquil) con un presupuesto f
 
 1. **Paso 1:** escribe tu presupuesto mensual, cuántas personas comen y tu ciudad o barrio (por defecto, Guayaquil).
 2. **Paso 2:** elige qué productos comparar y, si quieres, pulsa **Usar mi ubicación (GPS)**. Verás un mapa fijo con las tiendas cercanas en verde y tu ubicación en rojo, la tabla de precios de tus productos en cada tienda y la lista de tiendas cercanas ordenada de la más barata a la más cara. Las tiendas sin precios no aparecen.
-3. **Paso 3:** pulsa **Armar mi lista del mes** y la app arma la compra del mes con esas tiendas y esos precios. Puedes descargarla.
+3. **Paso 3:** pulsa **Armar mi lista del mes** y la app arma la compra del mes con esas tiendas y esos precios. Puedes descargarla para imprimir. Abajo, **Crear mis 4 recetas semanales** y **Añadir a mi calendario** para recibir una receta saludable cada semana.
 4. En el menú lateral, **¿Qué cocino hoy?** te da recetas con lo que tienes en casa.
 
 ## Ejecutar en local
@@ -69,7 +69,7 @@ requirements.txt Dependencias
 
 ## Limitaciones
 
-**Por qué los precios no se leen automáticamente de los supermercados:** Tía bloquea su API de catálogo y su robots.txt prohíbe el acceso automático a su buscador; leer precios en vivo con la búsqueda de Google desde Gemini solo está disponible con facturación activada. Por eso la app estima los precios con IA, deja que el usuario escriba los que vio y ofrece un enlace directo al precio de hoy.
+**Por qué los precios no se leen automáticamente de los supermercados:** Tía bloquea su API de catálogo y su robots.txt prohíbe el acceso automático a su buscador; leer precios en vivo con la búsqueda de Google desde Gemini solo está disponible con facturación activada. Por eso la app muestra precios estimados con IA y lo indica en pantalla.
 
 
 Los precios son estimaciones de la IA y pueden diferir de los reales; la app lo indica en pantalla. La información nutricional es aproximada y no reemplaza a un profesional de salud.

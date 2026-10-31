@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
 
-from ubicacion import enlace_precio
 
 # ---------------------------------------------------------------------------
 # Configuración
@@ -81,6 +80,15 @@ class Receta(BaseModel):
     por_que_es_nutritiva: str
     calorias_aprox_por_porcion: int
     proteina_g_aprox_por_porcion: int
+
+
+class RecetaSemana(BaseModel):
+    semana: int = Field(description="1, 2, 3 o 4")
+    receta: Receta
+
+
+class Recetario(BaseModel):
+    semanas: list[RecetaSemana]
 
 
 class RespuestaRecetas(BaseModel):
@@ -180,6 +188,20 @@ PRODUCTOS_COMUNES = [
     "Pan", "Avena", "Pescado", "Carne de res", "Plátano maduro", "Fideo",
 ]
 MAX_PRODUCTOS_COMPARAR = 15
+
+
+PROMPT_RECETARIO = """Crea 4 recetas saludables, UNA POR SEMANA del mes, para este hogar.
+
+INGREDIENTES QUE COMPRÓ PARA EL MES: {ingredientes}
+PERSONAS: {personas}
+PREFERENCIAS O RESTRICCIONES: {restricciones}
+
+REGLAS
+1. Usa solo esos ingredientes (puedes asumir sal, agua, aceite y condimentos básicos).
+   ingredientes_faltantes debe ir vacío y costo_faltantes_usd en 0.
+2. Las 4 recetas deben ser distintas entre sí y equilibradas: proteína, verduras o frutas, y algo de energía.
+3. Platos caseros de Ecuador, sencillos, de máximo 60 minutos. Pasos cortos (máximo 7).
+4. porciones = {personas}."""
 
 
 # ---------------------------------------------------------------------------
@@ -283,7 +305,6 @@ def tabla_items(items: list[ItemCompra]) -> list[dict]:
             "Precio unit. (USD)": round(it.precio_unitario_usd, 2),
             "Subtotal (USD)": subtotal(it),
             "Por qué ahí": it.motivo,
-            "Ver precio hoy": enlace_precio(it.producto, it.tienda),
         })
     return filas
 
@@ -490,6 +511,79 @@ def precios_como_texto(comp: Comparacion, tiendas: list[str]) -> str:
         if ps:
             partes.append(f"{f.producto} ({f.presentacion}): " + ", ".join(ps))
     return "; ".join(partes)
+
+
+def generar_recetario(cliente, items: list[ItemCompra], personas: int, restricciones: str = ""):
+    prompt = PROMPT_RECETARIO.format(
+        ingredientes=", ".join(sorted({i.producto for i in items})),
+        personas=personas, restricciones=restricciones or "ninguna",
+    )
+    rec, modelo = llamar_gemini(cliente, prompt, Recetario, razonamiento="minimal")
+    semanas = sorted(rec.semanas, key=lambda s: s.semana)[:4]
+    if not semanas:
+        raise ErrorIA("La IA no devolvió recetas. Intenta de nuevo.")
+    for i, s in enumerate(semanas, 1):
+        s.semana = i
+    rec.semanas = semanas
+    return rec, modelo
+
+
+def _ics_texto(t: str) -> str:
+    return t.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+def _ics_doblar(linea: str) -> str:
+    """Las líneas de un .ics no deben pasar de 75 bytes; se continúan con un espacio."""
+    partes, actual = [], ""
+    for ch in linea:
+        if len((actual + ch).encode("utf-8")) > 74:
+            partes.append(actual)
+            actual = " " + ch
+        else:
+            actual += ch
+    partes.append(actual)
+    return "\r\n".join(partes)
+
+
+def recetario_ics(rec: Recetario, primer_dia, hora: int = 9) -> str:
+    """Calendario con una receta por semana y un recordatorio ese día."""
+    from datetime import datetime, timedelta, timezone
+
+    sello = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    lineas = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Canastas//Recetario semanal//ES",
+              "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "X-WR-CALNAME:Canastas - recetas de la semana"]
+    for s in rec.semanas:
+        r = s.receta
+        dia = primer_dia + timedelta(weeks=s.semana - 1)
+        inicio = f"{dia:%Y%m%d}T{hora:02d}0000"
+        fin = f"{dia:%Y%m%d}T{hora + 1:02d}0000"
+        descripcion = (
+            f"{r.nombre} ({r.porciones} porciones, {r.tiempo_minutos} min)\n\n"
+            "Ingredientes: " + ", ".join(r.ingredientes_que_tienes) + "\n\nPreparación:\n"
+            + "\n".join(f"{i}. {p}" for i, p in enumerate(r.pasos, 1))
+            + f"\n\nPor qué es saludable: {r.por_que_es_nutritiva}"
+        )
+        lineas += [
+            "BEGIN:VEVENT", f"UID:canastas-{dia:%Y%m%d}-{s.semana}@canastas.streamlit.app", f"DTSTAMP:{sello}",
+            f"DTSTART:{inicio}", f"DTEND:{fin}",
+            _ics_doblar("SUMMARY:" + _ics_texto(f"🥗 Receta de la semana {s.semana}: {r.nombre}")),
+            _ics_doblar("DESCRIPTION:" + _ics_texto(descripcion)),
+            "BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER:-PT0M",
+            _ics_doblar("DESCRIPTION:" + _ics_texto(f"Hoy toca: {r.nombre}")), "END:VALARM", "END:VEVENT",
+        ]
+    lineas.append("END:VCALENDAR")
+    return "\r\n".join(lineas) + "\r\n"
+
+
+def recetario_texto(rec: Recetario) -> str:
+    out = ["CANASTAS - Recetas saludables para cada semana", ""]
+    for s in rec.semanas:
+        r = s.receta
+        out += [f"SEMANA {s.semana}: {r.nombre} ({r.porciones} porciones, {r.tiempo_minutos} min)",
+                "Ingredientes: " + ", ".join(r.ingredientes_que_tienes)]
+        out += [f"  {i}. {p}" for i, p in enumerate(r.pasos, 1)]
+        out += [f"Por qué es saludable: {r.por_que_es_nutritiva}", ""]
+    return "\n".join(out)
 
 
 # ---------------------------------------------------------------------------

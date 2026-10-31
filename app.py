@@ -159,8 +159,8 @@ with st.sidebar:
     st.button("🍳 ¿Qué cocino hoy?", on_click=ir, args=("recetas",), width="stretch")
     st.divider()
     st.info(
-        "Los precios son **estimaciones** hechas por IA. Usa los enlaces **Ver precio** para confirmar "
-        "el precio de hoy. La información nutricional es aproximada."
+        "Los precios son **estimaciones** hechas por IA; confírmalos en la tienda. "
+        "La información nutricional es aproximada."
     )
     st.caption("No escribas datos personales: lo que ingresas se envía a la IA de Google.")
 
@@ -320,11 +320,7 @@ def paso_tiendas():
                            "Cómo llegar": st.column_config.LinkColumn(display_text="Abrir mapa")},
         )
         st.caption("La más cercana de cada cadena.")
-    with st.expander("Ver el precio de hoy en la web de cada tienda"):
-        for f in filas:
-            enlaces = " · ".join(f"[{t}]({u.enlace_precio(f['Producto'], t)})" for t in cats)
-            st.markdown(f"**{f['Producto']}** ({f['Presentación']}): {enlaces}")
-    st.caption("Precios estimados por IA. Confírmalos con los enlaces o en la tienda.")
+    st.caption("Precios estimados por IA. Confírmalos en la tienda.")
 
     st.button("Armar mi lista del mes con estas tiendas →", type="primary", width="stretch",
               on_click=ir, args=(3,))
@@ -388,11 +384,10 @@ def paso_lista():
     filas = n.tabla_items(plan.items)
     st.subheader("🧾 Lista de compras por tienda")
     st.dataframe(filas, width="stretch", hide_index=True, height=alto(filas),
-                 column_config={"Ver precio hoy": st.column_config.LinkColumn(display_text="Ver precio")})
-    st.bar_chart(n.totales_por_tienda(plan.items), horizontal=True)
-    d1, d2 = st.columns(2)
-    d1.download_button("Descargar (Excel/CSV)", csv_de(filas), "lista_compras.csv", "text/csv", width="stretch")
-    d2.download_button("Descargar para imprimir", n.plan_a_texto(res, pres).encode("utf-8"),
+                 column_config={"Precio unit. (USD)": st.column_config.NumberColumn("Precio", format="$%.2f"),
+                                "Subtotal (USD)": st.column_config.NumberColumn("Subtotal", format="$%.2f"),
+                                "Por qué ahí": st.column_config.TextColumn(width="medium")})
+    st.download_button("Descargar lista para imprimir", n.plan_a_texto(res, pres).encode("utf-8"),
                        "lista_compras.txt", "text/plain", width="stretch")
     with st.expander("Menú de ejemplo para una semana"):
         st.dataframe([{"Día": c.dia, "Desayuno": c.desayuno, "Almuerzo": c.almuerzo, "Merienda": c.merienda}

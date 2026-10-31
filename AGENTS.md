@@ -7,6 +7,7 @@ App Streamlit que, a partir de un presupuesto mensual de comida, genera una list
 
 ## Arquitectura
 - `app.py`: SOLO interfaz. No pongas lógica de negocio aquí.
+- `diseno.py`: solo presentación (CSS, cabecera, pasos, menú). Colores: verde esmeralda profundo #0E5A43, verde claro #E0EEE7, texto #1F2A24, fondo #F4F5F0; fuente DM Sans; mapa: tiendas en verde, usuario en rojo. Diseñar primero para celular.
 - `nucleo.py`: esquemas Pydantic, prompts, `llamar_gemini`, validaciones y cálculos. Debe poder importarse y probarse sin Streamlit.
 - `ubicacion.py`: tiendas cercanas con OpenStreetMap (Nominatim y Overpass, con User-Agent propio y caché) y enlaces de precio. No raspar webs de supermercados: Tía lo prohíbe en robots.txt.
 - La IA se llama con la librería `google-genai` (`from google import genai`), salida JSON estructurada con `response_schema` = modelo Pydantic.

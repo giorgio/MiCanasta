@@ -13,11 +13,13 @@ Streamlit Community Cloud, nunca en el código.
 
 import csv
 import io
+import os
 import time
 
 import pydeck as pdk
 import streamlit as st
 
+import diseno as d
 import nucleo as n
 import ubicacion as u
 
@@ -26,7 +28,8 @@ try:  # componente para leer el GPS del navegador
 except Exception:  # noqa: BLE001
     get_geolocation = None
 
-st.set_page_config(page_title="Canastas", page_icon="🛒", layout="wide")
+ICONO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icono.png")
+st.set_page_config(page_title="Canastas", page_icon=ICONO if os.path.exists(ICONO) else "🧺", layout="wide")
 
 VERDE = [46, 125, 50]
 ROJO = [211, 47, 47]
@@ -146,23 +149,9 @@ def mapa_fijo(lat: float, lon: float, radio_km: float, tiendas: list[dict]):
 # Cabecera
 # ---------------------------------------------------------------------------
 
-st.title("🛒 Canastas")
-
+d.aplicar_estilos()
+d.cabecera()
 paso = st.session_state["paso"]
-if paso in (1, 2, 3):
-    st.progress(paso / 3, text=["", "Paso 1 de 3 · Tus datos", "Paso 2 de 3 · Tiendas y precios",
-                                "Paso 3 de 3 · Tu lista del mes"][paso])
-
-with st.sidebar:
-    st.header("Menú")
-    st.button("🧾 Mi compra del mes", on_click=ir, args=(1,), width="stretch")
-    st.button("🍳 ¿Qué cocino hoy?", on_click=ir, args=("recetas",), width="stretch")
-    st.divider()
-    st.info(
-        "Los precios son **estimaciones** hechas por IA; confírmalos en la tienda. "
-        "La información nutricional es aproximada."
-    )
-    st.caption("No escribas datos personales: lo que ingresas se envía a la IA de Google.")
 
 
 # ---------------------------------------------------------------------------
@@ -170,15 +159,32 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 
 def paso_inicio():
-    st.write("Dime cuánto tienes para la comida del mes y te digo **dónde comprar más barato** y **qué comprar**.")
-    with st.form("form_inicio", border=True):
-        pres = st.number_input("💵 ¿Cuál es tu presupuesto mensual para comida? (USD)", min_value=0.0,
-                               max_value=10000.0, step=10.0, value=float(st.session_state["presupuesto"]))
-        pers = st.number_input("👨‍👩‍👧 ¿Cuántas personas comen en casa?", min_value=1, max_value=15,
-                               value=int(st.session_state["personas"]))
-        ciudad = st.text_input("📍 ¿En qué ciudad o barrio vives?", placeholder="Ej.: Urdesa, Guayaquil",
-                               value=st.session_state["ciudad"])
-        seguir = st.form_submit_button("Continuar →", type="primary", width="stretch")
+    d.titulo("Planifica con claridad", "Tu compra empieza aquí.",
+             "Dinos cuánto puedes gastar en comida este mes.<br>"
+             "Después elegiremos las tiendas donde puedes comprar.")
+    with st.container(border=True, key="tarjeta"):
+        d.pasos(1)
+        with st.form("form_inicio", border=False):
+            with st.container(key="caja_presupuesto"):
+                st.markdown("#### ¿Cuál es tu presupuesto mensual?")
+                st.caption("El monto total que tienes para la comida de tu hogar.")
+                c0, c1, c2 = st.columns([0.45, 6, 1], vertical_alignment="center", gap="small")
+                c0.markdown('<div class="cn-signo">$</div>', unsafe_allow_html=True)
+                pres = c1.number_input("Presupuesto mensual (USD)", min_value=0.0, max_value=10000.0, step=10.0,
+                                       value=float(st.session_state["presupuesto"]), format="%.2f",
+                                       label_visibility="collapsed", key="w_pres")
+                c2.markdown('<div class="cn-moneda">USD /<br>mes</div>', unsafe_allow_html=True)
+            st.write("")
+            c1, c2 = st.columns(2, gap="medium")
+            pers = c1.number_input("¿Cuántas personas comen?", min_value=1, max_value=15, placeholder="Ej.: 4",
+                                   value=int(st.session_state["personas"]))
+            c1.caption("Inclúyete a ti también.")
+            ciudad = c2.text_input("¿En qué ciudad o barrio?", placeholder="Ej.: Guayaquil, Urdesa",
+                                   value=st.session_state["ciudad"])
+            c2.caption("Solo una ubicación general.")
+            st.write("")
+            seguir = st.form_submit_button("Continuar a mis tiendas  →", type="primary", width="stretch")
+            d.pie_paso("Paso 1 de 3 · Completa los campos para continuar.")
     if seguir:
         val = n.validar_plan(pres, pers, ["-"])
         if not ciudad.strip():
@@ -187,7 +193,7 @@ def paso_inicio():
             st.error(e)
         if val.ok:
             st.session_state.update(presupuesto=pres, personas=pers, ciudad=ciudad.strip())
-            for k in ("punto", "comparacion", "resultado"):
+            for k in ("punto", "comparacion", "resultado", "recetario"):
                 st.session_state.pop(k, None)
             ir(2)
             st.rerun()
@@ -253,17 +259,22 @@ def comparar_cercanas(tiendas: list[dict]):
 
 
 def paso_tiendas():
-    st.button("← Cambiar mis datos", on_click=ir, args=(1,))
-    with st.container(border=True):
+    d.titulo("Encuentra lo más barato", "Tus tiendas cercanas.",
+             "Comparamos tus productos en los supermercados y mercados que tienes cerca.")
+    with st.container(border=True, key="tarjeta"):
+        d.pasos(2)
         st.session_state["productos"] = st.multiselect(
-            "🛍️ ¿Qué productos quieres comparar?", n.PRODUCTOS_COMUNES, default=st.session_state["productos"],
+            "¿Qué productos quieres comparar?", n.PRODUCTOS_COMUNES, default=st.session_state["productos"],
             accept_new_options=True, max_selections=n.MAX_PRODUCTOS_COMPARAR)
         c1, c2 = st.columns([1, 1])
-        if c1.button("📡 Usar mi ubicación (GPS)", disabled=get_geolocation is None, width="stretch"):
-            st.session_state["pedir_gps"] = True
-        st.session_state["radio"] = c2.select_slider(
+        st.session_state["radio"] = c1.select_slider(
             "Distancia máxima", options=[1, 2, 3, 5, 8, 12], value=st.session_state["radio"],
             format_func=lambda x: f"{x} km")
+        c2.write("")
+        if c2.button("Usar mi ubicación (GPS)", icon=":material/my_location:", disabled=get_geolocation is None,
+                     width="stretch"):
+            st.session_state["pedir_gps"] = True
+        st.button("Cambiar mis datos", icon=":material/arrow_back:", on_click=ir, args=(1,), type="tertiary")
     if not st.session_state["productos"]:
         st.warning("Elige al menos un producto para comparar.")
         return
@@ -331,12 +342,15 @@ def paso_tiendas():
 # ---------------------------------------------------------------------------
 
 def paso_lista():
-    st.button("← Volver a las tiendas", on_click=ir, args=(2,))
     datos = st.session_state.get("comparacion")
     tiendas = datos["con_precio"] if datos else ["Mercado municipal", "Tía", "Supermaxi"]
     pres, personas = st.session_state["presupuesto"], st.session_state["personas"]
-    st.write(f"**{pres:.2f} USD** para **{personas}** persona(s) en **{st.session_state['ciudad']}** · "
-             f"Tiendas: {', '.join(tiendas)}")
+    d.titulo("Tu plan del mes", "Tu canasta del mes.",
+             f"{pres:.2f} USD para {personas} persona(s) en {st.session_state['ciudad']}.<br>"
+             f"Tiendas: {', '.join(tiendas)}.")
+    with st.container(border=True, key="tarjeta"):
+        d.pasos(3)
+        st.button("Volver a las tiendas", icon=":material/arrow_back:", on_click=ir, args=(2,), type="tertiary")
 
     with st.expander("Ajustar mi lista (opcional)"):
         st.session_state["comidas"] = st.selectbox("Comidas al día", [2, 3, 4],
@@ -457,8 +471,8 @@ def cargar_ejemplo_recetas():
 
 
 def pagina_recetas():
-    st.button("← Volver", on_click=ir, args=(1,))
-    st.subheader("🍳 ¿Qué cocino hoy?")
+    d.titulo("Cocina con lo que tienes", "¿Qué cocino hoy?",
+             "Escribe lo que hay en tu cocina y te damos 3 recetas nutritivas.")
     st.button("Usar ingredientes de ejemplo", on_click=cargar_ejemplo_recetas)
     with st.form("form_recetas"):
         ingredientes = st.text_area("¿Qué tienes en la cocina? Sepáralo con comas",
@@ -505,7 +519,11 @@ def pagina_recetas():
 # Router
 # ---------------------------------------------------------------------------
 
-{1: paso_inicio, 2: paso_tiendas, 3: paso_lista, "recetas": pagina_recetas}.get(paso, paso_inicio)()
+col_menu, col_pagina = st.columns([1, 3], gap="large")
+with col_menu:
+    d.menu(paso, ir)
+with col_pagina:
+    {1: paso_inicio, 2: paso_tiendas, 3: paso_lista, "recetas": pagina_recetas}.get(paso, paso_inicio)()
 
 st.divider()
 st.caption("Canastas · Proyecto académico · IA: Google Gemini · Mapa: © OpenStreetMap · "

@@ -51,12 +51,15 @@ La clave se obtiene gratis en [Google AI Studio](https://aistudio.google.com/api
 ## Estructura
 
 ```
-app.py           Interfaz (Streamlit)
+app.py           Interfaz (Streamlit): pantallas y flujo en 3 pasos
+diseno.py        Diseño visual: estilos, cabecera, indicador de pasos y menú (adaptado a celular)
+.streamlit/      config.toml con el tema (colores, fuente DM Sans, bordes)
 ubicacion.py     Tiendas cercanas (OpenStreetMap: Nominatim + Overpass) y enlaces de precio
 tests/           Pruebas sin internet ni cuota
 nucleo.py        Lógica: esquemas, prompts, llamada a Gemini, validaciones y cálculos
 PROMPTS.md       Prompts reutilizables de la app
 AGENTS.md        Contexto para el agente de programación
+icono.png        Isotipo de Canastas (ícono de la pestaña)
 requirements.txt Dependencias
 ```
 

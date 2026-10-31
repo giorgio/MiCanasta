@@ -16,11 +16,13 @@ Hogares de la costa ecuatoriana (por ejemplo, en Balao) con un presupuesto fijo 
 ## Funcionalidades
 
 - **📍 Tiendas cerca de ti:** con el GPS del celular o escribiendo la ciudad, muestra en un mapa los supermercados, mercados y tiendas reales cercanos (OpenStreetMap), con distancia y enlace para llegar. Un botón marca esas cadenas en el formulario.
+- **📊 Comparar precios:** eliges productos y tiendas (mercado, Tía, Mi Comisariato, Akí, Supermaxi, Coral, TuTi…) y ves el precio estimado de cada uno en cada tienda, cuál es la más barata, el ahorro y el total por tienda.
 - **Ver precio hoy:** cada producto de la lista tiene un enlace que abre la búsqueda de ese producto en la web de la tienda (Tía) o en Google, para confirmar el precio actual.
 
 | Pestaña | Entrada | Salida |
 |---|---|---|
 | 🧾 Mi compra del mes | Presupuesto (USD), personas, comidas al día, tiendas, restricciones, lo que ya hay en casa, precios conocidos | Lista por tienda con cantidades, precio y subtotal; total, sobrante y gráfico por tienda; menú semanal de ejemplo; consejos; descarga CSV y TXT |
+| 📊 Comparar precios | Productos, tiendas, ciudad, precios vistos | Tabla producto × tienda, tienda más barata, ahorro, total por tienda, enlaces y CSV |
 | 🍳 ¿Qué cocino hoy? | Ingredientes disponibles, personas, restricciones | 3 recetas con pasos, lo que falta comprar y su costo, calorías y proteína aproximadas |
 
 ## Cómo usarla

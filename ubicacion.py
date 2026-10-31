@@ -26,9 +26,13 @@ OVERPASS = [
 CADENAS = {
     "Tía": ["tia", "tía", "almacenes tia"],
     "Mi Comisariato": ["mi comisariato", "comisariato"],
-    "Supermaxi": ["supermaxi", "megamaxi"],
+    "Supermaxi": ["supermaxi"],
     "Akí / Gran Akí": ["aki", "akí", "gran aki", "gran akí", "super aki"],
     "Santa María": ["santa maria", "santa maría", "supermercados santa maria"],
+    "Coral Hipermercados": ["coral", "coral hipermercados"],
+    "TuTi": ["tuti", "tu ti"],
+    "Megamaxi": ["megamaxi"],
+    "Hipermarket": ["hipermarket"],
 }
 
 TIPOS = {
@@ -44,6 +48,7 @@ TIPOS = {
 BUSQUEDA_TIENDA = {
     "Tía": "https://www.tia.com.ec/catalogsearch/result/?q={q}",
 }
+NO_ONLINE = {"Mercado municipal", "Feria libre", "Tienda de barrio", "Mercado mayorista"}
 
 
 class ErrorMapa(Exception):
@@ -69,17 +74,22 @@ def cadena_de(nombre: str, marca: str = "") -> str | None:
 
 def geocodificar(lugar: str) -> tuple[float, float, str]:
     """Devuelve (lat, lon, nombre legible) de un lugar de Ecuador."""
-    try:
-        r = requests.get(
-            NOMINATIM,
-            params={"q": lugar, "format": "json", "limit": 1, "countrycodes": "ec"},
-            headers={"User-Agent": USER_AGENT},
-            timeout=15,
-        )
-        r.raise_for_status()
-        datos = r.json()
-    except requests.RequestException as e:
-        raise ErrorMapa("No se pudo consultar el mapa en este momento. Intenta de nuevo en un minuto.") from e
+    datos = []
+    # Primero buscamos un pueblo o ciudad (no el cantón entero), luego cualquier lugar.
+    for extra in ({"featureType": "settlement"}, {}):
+        try:
+            r = requests.get(
+                NOMINATIM,
+                params={"q": lugar, "format": "json", "limit": 1, "countrycodes": "ec", **extra},
+                headers={"User-Agent": USER_AGENT},
+                timeout=15,
+            )
+            r.raise_for_status()
+            datos = r.json()
+        except requests.RequestException as e:
+            raise ErrorMapa("No se pudo consultar el mapa en este momento. Intenta de nuevo en un minuto.") from e
+        if datos:
+            break
     if not datos:
         raise ErrorMapa(f"No encontré '{lugar}' en Ecuador. Prueba con 'ciudad, provincia', por ejemplo 'Balao, Guayas'.")
     d = datos[0]
@@ -140,6 +150,8 @@ def tiendas_para_plan(tiendas: list[dict]) -> list[str]:
     for t in tiendas:
         if t["cadena"]:
             op = t["cadena"]
+        elif t["tipo"] == "Mercado" and "mayorista" in t["nombre"].lower():
+            op = "Mercado mayorista"
         elif t["tipo"] == "Mercado":
             op = "Mercado municipal"
         elif t["tipo"] in ("Tienda de barrio", "Frutas y verduras", "Carnicería"):
@@ -163,6 +175,8 @@ def enlace_precio(producto: str, tienda: str) -> str:
     """Enlace para que la persona vea el precio de hoy de ese producto."""
     if tienda in BUSQUEDA_TIENDA:
         return BUSQUEDA_TIENDA[tienda].format(q=quote_plus(producto))
+    if tienda in NO_ONLINE:
+        return "https://www.google.com/search?q=" + quote_plus(f"precio {producto} mercado Ecuador hoy")
     return "https://www.google.com/search?q=" + quote_plus(f"{producto} precio {tienda} Ecuador")
 
 

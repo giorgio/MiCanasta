@@ -30,6 +30,11 @@ TIENDAS_DISPONIBLES = [
     "Supermaxi",
     "Akí / Gran Akí",
     "Santa María",
+    "Coral Hipermercados",
+    "TuTi",
+    "Megamaxi",
+    "Hipermarket",
+    "Mercado mayorista",
 ]
 
 # Por debajo de este monto por persona y por día el plan será muy ajustado.
@@ -83,6 +88,22 @@ class RespuestaRecetas(BaseModel):
     aviso: str = Field(description="Vacío, o una advertencia si los ingredientes no alcanzan o no son comida")
 
 
+class PrecioTienda(BaseModel):
+    tienda: str
+    precio_usd: float = Field(description="Precio estimado en USD de la presentación indicada; 0 si esa tienda no suele venderlo")
+
+
+class FilaComparacion(BaseModel):
+    producto: str
+    presentacion: str = Field(description="Presentación común en Ecuador, p. ej. 'funda 2 kg', 'cubeta 30 unidades', 'litro'")
+    precios: list[PrecioTienda]
+
+
+class Comparacion(BaseModel):
+    filas: list[FilaComparacion]
+    nota: str = Field(description="Una frase sobre qué tipo de tienda suele ser más barata para estos productos")
+
+
 # ---------------------------------------------------------------------------
 # Prompts (reutilizables: se documentan también en PROMPTS.md)
 # ---------------------------------------------------------------------------
@@ -111,7 +132,7 @@ DATOS DEL HOGAR
 
 REGLAS
 1. La suma de cantidad x precio_unitario_usd de todos los productos debe ser
-   MENOR O IGUAL a {presupuesto:.2f} USD. Deja un margen de 3 a 8 % para imprevistos.
+   MENOR O IGUAL a {presupuesto:.2f} USD. Deja un margen de 5 a 10 % para imprevistos.
 2. Las cantidades deben alcanzar para {personas} persona(s) durante 30 días.
 3. Asigna cada producto a la tienda más barata para ese tipo de producto
    (por lo general: frutas, verduras y proteína fresca en mercado o feria; granos,
@@ -119,7 +140,8 @@ REGLAS
    está mucho más cerca, prefiérela cuando la diferencia de precio sea pequeña.
 4. precio_unitario_usd es el precio de UNA unidad de la columna 'unidad'.
 5. Cubre todos los grupos: energía (granos, tubérculos), proteína, frutas y verduras.
-6. Entre 12 y 30 productos. Nada de comida chatarra ni bebidas azucaradas.
+6. Entre 12 y 22 productos. Nada de comida chatarra ni bebidas azucaradas.
+7. 'motivo' y los consejos: frases MUY cortas (máximo 12 palabras).
 {correccion}"""
 
 PROMPT_RECETAS = """Propón 3 recetas nutritivas que se puedan preparar con lo que hay en casa.
@@ -137,6 +159,27 @@ REGLAS
 4. Calorías y proteína son aproximadas por porción.
 5. Si los ingredientes no alcanzan para ninguna receta, o no son alimentos,
    devuelve la lista de recetas vacía y explica el motivo en 'aviso'."""
+
+
+PROMPT_COMPARAR = """Compara el precio ESTIMADO de estos productos en estas tiendas de Ecuador.
+
+PRODUCTOS: {productos}
+TIENDAS: {tiendas}
+CIUDAD O ZONA: {ciudad}
+PRECIOS QUE EL USUARIO YA VIO (úsalos tal cual para esa tienda): {precios_conocidos}
+
+REGLAS
+1. Una fila por producto, con la MISMA presentación para todas las tiendas, para que sean comparables.
+2. En cada fila incluye TODAS las tiendas de la lista, con el nombre exacto.
+3. Precios en USD, realistas para Ecuador hoy. Si una tienda no suele vender ese producto, pon 0.
+4. Mercados, ferias y mayoristas suelen ser más baratos en frescos; las cadenas, en empacados y ofertas."""
+
+PRODUCTOS_COMUNES = [
+    "Arroz", "Aceite", "Azúcar", "Huevos", "Pollo entero", "Atún en lata", "Leche",
+    "Lenteja", "Fréjol", "Verde", "Papa", "Cebolla paiteña", "Tomate", "Queso fresco",
+    "Pan", "Avena", "Pescado", "Carne de res", "Plátano maduro", "Fideo",
+]
+MAX_PRODUCTOS_COMPARAR = 15
 
 
 # ---------------------------------------------------------------------------
@@ -274,7 +317,8 @@ def llamar_gemini(cliente, prompt: str, esquema, modelos=(MODELO_PRINCIPAL, MODE
                         response_mime_type="application/json",
                         response_schema=esquema,
                         temperature=0.4,
-                        max_output_tokens=8192,
+                        max_output_tokens=12000,
+                        thinking_config=types.ThinkingConfig(thinking_level="low"),
                     ),
                 )
                 obj = resp.parsed
@@ -366,6 +410,53 @@ def generar_recetas(cliente, ingredientes, personas, restricciones):
     )
     resp, modelo = llamar_gemini(cliente, prompt, RespuestaRecetas)
     return resp, modelo
+
+
+def validar_comparacion(productos: list[str], tiendas: list[str]) -> Validacion:
+    v = Validacion()
+    if not productos:
+        v.errores.append("Elige al menos un producto para comparar.")
+    if len(productos) > MAX_PRODUCTOS_COMPARAR:
+        v.errores.append(f"Compara como máximo {MAX_PRODUCTOS_COMPARAR} productos a la vez.")
+    if len(tiendas) < 2:
+        v.errores.append("Elige al menos dos tiendas para comparar.")
+    return v
+
+
+def comparar_precios(cliente, productos, tiendas, ciudad="", precios_conocidos=""):
+    prompt = PROMPT_COMPARAR.format(
+        productos=", ".join(productos), tiendas=", ".join(tiendas),
+        ciudad=ciudad or "Ecuador (costa)", precios_conocidos=precios_conocidos or "ninguno",
+    )
+    comp, modelo = llamar_gemini(cliente, prompt, Comparacion)
+    if not comp.filas:
+        raise ErrorIA("La IA no devolvió precios para comparar. Intenta de nuevo.")
+    return comp, modelo
+
+
+def tabla_comparacion(comp: Comparacion, tiendas: list[str]) -> tuple[list[dict], dict[str, float], dict[str, int]]:
+    """Filas para mostrar, total por tienda (solo productos que venden todas) y veces que cada tienda es la más barata."""
+    filas, totales, ganadas = [], {t: 0.0 for t in tiendas}, {t: 0 for t in tiendas}
+    for f in comp.filas:
+        precios = {p.tienda: p.precio_usd for p in f.precios if p.tienda in tiendas}
+        validos = {t: v for t, v in precios.items() if v and v > 0}
+        fila = {"Producto": f.producto, "Presentación": f.presentacion}
+        for t in tiendas:
+            v = precios.get(t, 0)
+            fila[t] = round(v, 2) if v and v > 0 else None
+        if validos:
+            barata = min(validos, key=validos.get)
+            fila["Más barato en"] = barata
+            fila["Ahorro vs. más caro"] = round(max(validos.values()) - validos[barata], 2)
+            ganadas[barata] += 1
+        else:
+            fila["Más barato en"] = "—"
+            fila["Ahorro vs. más caro"] = None
+        if len(validos) == len(tiendas):
+            for t in tiendas:
+                totales[t] = round(totales[t] + validos[t], 2)
+        filas.append(fila)
+    return filas, totales, ganadas
 
 
 # ---------------------------------------------------------------------------

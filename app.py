@@ -109,7 +109,7 @@ def seccion_ubicacion():
                     st.session_state["punto"] = geocodificar(lugar.strip())
                 except u.ErrorMapa as e:
                     st.error(str(e))
-        radio = st.slider("Radio de búsqueda (km)", 1, 20, 5, key="in_radio")
+        radio = st.slider("Radio de búsqueda (km)", 1, 25, 8, key="in_radio")
 
         if st.session_state.get("pedir_gps") and get_geolocation:
             loc = get_geolocation()
@@ -211,7 +211,7 @@ with st.sidebar:
     )
     st.caption("No escribas datos personales: lo que ingresas se envía a la IA de Google.")
 
-tab_plan, tab_recetas = st.tabs(["🧾 Mi compra del mes", "🍳 ¿Qué cocino hoy?"])
+tab_plan, tab_comparar, tab_recetas = st.tabs(["🧾 Mi compra del mes", "📊 Comparar precios", "🍳 ¿Qué cocino hoy?"])
 
 # ---------------------------------------------------------------------------
 # Pestaña 1: plan de compras
@@ -255,7 +255,7 @@ with tab_plan:
             for a in val.avisos:
                 st.warning(a)
             cliente = obtener_cliente()
-            with st.spinner("Armando tu lista del mes... puede tardar unos 20 segundos"):
+            with st.spinner("Armando tu lista del mes… puede tardar hasta un minuto. No cierres la página."):
                 try:
                     st.session_state["resultado"] = n.generar_plan(
                         cliente, presupuesto, personas, comidas, ciudad, tiendas,
@@ -318,7 +318,70 @@ with tab_plan:
             st.markdown(f"- {c}")
 
 # ---------------------------------------------------------------------------
-# Pestaña 2: recetas con lo que hay en casa
+# Pestaña 2: comparar precios entre tiendas
+# ---------------------------------------------------------------------------
+
+with tab_comparar:
+    st.subheader("📊 ¿Dónde está más barato?")
+    st.write(
+        "Elige productos y tiendas, y la app te muestra el precio **estimado** de cada uno en cada tienda, "
+        "cuál es la más barata y cuánto ahorras. Usa los enlaces **Ver precio** para confirmar el de hoy."
+    )
+    with st.form("form_comparar"):
+        prod = st.multiselect(
+            f"Productos (máximo {n.MAX_PRODUCTOS_COMPARAR})", n.PRODUCTOS_COMUNES,
+            default=["Arroz", "Aceite", "Huevos", "Pollo entero", "Atún en lata", "Leche", "Azúcar", "Lenteja"],
+            accept_new_options=True, key="cmp_productos",
+        )
+        tiendas_cmp = st.multiselect(
+            "Tiendas a comparar", n.TIENDAS_DISPONIBLES,
+            default=["Mercado municipal", "Tía", "Mi Comisariato", "Akí / Gran Akí"], key="cmp_tiendas",
+        )
+        c1, c2 = st.columns(2)
+        ciudad_cmp = c1.text_input("Ciudad (opcional)", placeholder="Ej.: Balao, Guayas", key="cmp_ciudad")
+        vistos = c2.text_input("Precios que viste hoy (opcional)", placeholder="Ej.: huevos 4.50 en el mercado",
+                               key="cmp_vistos")
+        comparar = st.form_submit_button("Comparar precios", type="primary")
+
+    if comparar:
+        val = n.validar_comparacion(prod, tiendas_cmp)
+        for e in val.errores:
+            st.error(e)
+        if val.ok and puede_consultar():
+            cliente = obtener_cliente()
+            with st.spinner("Comparando precios… puede tardar unos 30 segundos"):
+                try:
+                    comp, _ = n.comparar_precios(cliente, prod, tiendas_cmp, ciudad_cmp, vistos)
+                    st.session_state["comparacion"] = (comp, list(tiendas_cmp))
+                except n.ErrorIA as e:
+                    st.error(str(e))
+
+    if st.session_state.get("comparacion"):
+        comp, tiendas_c = st.session_state["comparacion"]
+        filas, totales, ganadas = n.tabla_comparacion(comp, tiendas_c)
+        campeona = max(ganadas, key=ganadas.get)
+        completos = {t: v for t, v in totales.items() if v > 0}
+        m = st.columns(min(len(completos), 4) or 1)
+        for i, (t, v) in enumerate(sorted(completos.items(), key=lambda kv: kv[1])[:4]):
+            barata = i == 0
+            m[i].metric(t, f"{v:.2f} USD", "la más barata" if barata else f"+{v - min(completos.values()):.2f} USD",
+                        delta_color="normal" if barata else "inverse")
+        if completos:
+            st.caption("Total de los productos que venden todas las tiendas elegidas (precios estimados).")
+        st.success(f"**{campeona}** es la más barata en {ganadas[campeona]} de {len(filas)} productos. {comp.nota}")
+        st.dataframe(
+            filas, hide_index=True, width="stretch",
+            column_config={t: st.column_config.NumberColumn(t, format="$%.2f") for t in tiendas_c}
+            | {"Ahorro vs. más caro": st.column_config.NumberColumn(format="$%.2f")},
+        )
+        with st.expander("Ver precio de hoy en cada tienda"):
+            for f in filas:
+                enlaces = " · ".join(f"[{t}]({u.enlace_precio(f['Producto'], t)})" for t in tiendas_c)
+                st.markdown(f"**{f['Producto']}** ({f['Presentación']}): {enlaces}")
+        st.download_button("Descargar comparación (CSV)", csv_de(filas), "comparacion_precios.csv", "text/csv")
+
+# ---------------------------------------------------------------------------
+# Pestaña 3: recetas con lo que hay en casa
 # ---------------------------------------------------------------------------
 
 with tab_recetas:

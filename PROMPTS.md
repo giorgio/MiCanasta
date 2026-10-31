@@ -29,9 +29,14 @@ Reglas: usar sobre todo lo disponible (se asume sal, agua y aceite); faltantes b
 
 **Salida:** JSON con el esquema `RespuestaRecetas`.
 
+## 4. Comparar precios (`PROMPT_COMPARAR`)
+Variables: `productos`, `tiendas`, `ciudad`, `precios_conocidos`. Pide la misma presentación para todas las tiendas (para que sean comparables), todas las tiendas en cada fila, 0 si no lo venden, y respeta los precios que el usuario vio. La app decide cuál es la más barata y calcula ahorros y totales.
+
 ## Prompts usados con el agente de programación
 1. *"Lee AGENTS.md. Construye una app Streamlit con dos pestañas: plan de compras mensual por tienda y recetas con lo que hay en casa. Separa interfaz (app.py) y lógica (nucleo.py). Usa google-genai con salida JSON estructurada mediante Pydantic."*
 2. *"La IA a veces suma mal. Haz que la app calcule los totales y, si se pasa del presupuesto, pida una corrección una sola vez."*
 3. *"Añade manejo de errores: 401/403 clave inválida, 429 cuota, 404 modelo inexistente, 5xx saturado. Si el modelo principal falla por cuota, usa uno de respaldo. Mensajes para usuario no técnico."*
 4. *"Escribe pruebas que simulen el cliente de Gemini para no gastar cuota: plan dentro de presupuesto, plan que se pasa, item con precio 0, tienda no elegida, 429 en ambos modelos, clave inválida, ingredientes que no son comida."*
 5. *"Agrega botones 'Cargar ejemplo' para que un usuario nuevo vea la app funcionando sin escribir nada."*
+6. *"La lista tardaba unos 100 segundos: baja el razonamiento del modelo a nivel bajo, limita a 22 productos y frases cortas."*
+7. *"Agrega una pestaña para comparar precios de varios productos entre varias tiendas y marca la más barata."*

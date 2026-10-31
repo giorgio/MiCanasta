@@ -34,7 +34,7 @@ r = n.generar_plan(c, 100, 2, 3, "", ["Tía", "Mercado municipal"], "", "", "")
 assert r["total"] == 19 and r["dentro_presupuesto"] and not r["corregido"]
 
 # se pasa -> corrige
-c = Fake([plan([item("Arroz", 100, 2.0)]), plan([item("Arroz", 30, 2.0)])])
+c = Fake([plan([item("Pollo", 100, 2.0)]), plan([item("Pollo", 30, 2.0)])])
 r = n.generar_plan(c, 80, 2, 3, "", ["Tía"], "", "", "")
 assert r["corregido"] and r["total"] == 60 and r["dentro_presupuesto"]
 
@@ -92,3 +92,26 @@ r2 = n.resumen_por_tienda(comp2, ["Tía", "Supermaxi"])
 assert r2["Tía"] == {"total": 1.9, "con_precio": 2, "productos": 2} and r2["Supermaxi"]["con_precio"] == 1
 assert "Tienda de barrio" not in n.precios_como_texto(comp2, ["Tía", "Supermaxi"])
 print("TIENDAS SIN PRECIO OK")
+
+# recetario semanal y calendario .ics
+from datetime import date
+RS = lambda k: n.Receta(nombre=f"Seco de pollo {k}", porciones=3, tiempo_minutos=45, ingredientes_que_tienes=["pollo", "arroz, tomate"],
+                        ingredientes_faltantes=[], costo_faltantes_usd=0, pasos=["Cocina; sirve."], por_que_es_nutritiva="Proteína.",
+                        calorias_aprox_por_porcion=500, proteina_g_aprox_por_porcion=30)
+rec = n.Recetario(semanas=[n.RecetaSemana(semana=w, receta=RS(w)) for w in (3, 1, 2, 4, 5)])
+r, _ = n.generar_recetario(Fake([rec]), [n.ItemCompra(producto="Pollo", categoria="x", cantidad=1, unidad="kg", tienda="Tía", precio_unitario_usd=1, motivo="m")], 3)
+assert [s.semana for s in r.semanas] == [1, 2, 3, 4]
+ics = n.recetario_ics(r, date(2026, 11, 1))
+lineas = ics.split("\r\n")
+assert ics.count("BEGIN:VEVENT") == 4 and "DTSTART:20261122T090000" in ics
+assert all(len(l.encode()) <= 75 for l in lineas)
+assert "arroz\\, tomate" in ics.replace("\r\n ", "")
+print("RECETARIO Y CALENDARIO OK")
+
+# cantidades exageradas se ajustan al consumo real
+I = lambda p, c, u: n.ItemCompra(producto=p, categoria="x", cantidad=c, unidad=u, tienda="Tía", precio_unitario_usd=2, motivo="m")
+its = [I("Aceite", 3, "botella 900 ml"), I("Atún en lata", 20, "lata 140 g"), I("Arroz", 5, "funda 2 kg"), I("Pollo", 10, "kg")]
+av = n.ajustar_cantidades(its, 2)
+assert [i.cantidad for i in its] == [2, 12, 5, 10], [i.cantidad for i in its]
+assert len(av) == 2 and "Aceite" in av[0]
+print("CANTIDADES REALISTAS OK")

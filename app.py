@@ -372,14 +372,25 @@ def paso_lista():
     m1, m2, m3 = st.columns(3)
     m1.metric("Presupuesto", f"{pres:.2f} USD")
     m2.metric("Total estimado", f"{res['total']:.2f} USD")
-    m3.metric("Te sobra", f"{res['sobrante']:.2f} USD")
+    sobra = res["sobrante"]
+    m3.metric("Te sobra", f"{sobra:.2f} USD",
+              f"{sobra / pres * 100:.0f} % de ahorro" if sobra > 0 and pres else None)
     if res["dentro_presupuesto"]:
-        st.success(plan.resumen)
+        if sobra >= 1:
+            st.success(f"🎉 ¡Con esta lista **te sobran {sobra:.2f} USD** este mes! Puedes ahorrarlos o "
+                       "usarlos para imprevistos.")
+        st.info(plan.resumen)
     else:
         st.error(f"Aun ajustada, la lista cuesta {res['total']:.2f} USD y se pasa {-res['sobrante']:.2f} USD. "
                  "Aumenta el presupuesto o pulsa «Volver a armar la lista».")
+    ajustes = [a for a in res["avisos"] if a.startswith("Ajusté")]
     for a in res["avisos"]:
-        st.warning(a)
+        if a not in ajustes:
+            st.warning(a)
+    if ajustes:
+        with st.expander(f"✂️ Ajusté {len(ajustes)} cantidad(es) que eran demasiado para tu hogar"):
+            for a in ajustes:
+                st.markdown(f"- {a}")
 
     filas = n.tabla_items(plan.items)
     st.subheader("🧾 Lista de compras por tienda")

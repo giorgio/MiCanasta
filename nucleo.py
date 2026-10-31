@@ -140,8 +140,14 @@ DATOS DEL HOGAR
 
 REGLAS
 1. La suma de cantidad x precio_unitario_usd de todos los productos debe ser
-   MENOR O IGUAL a {presupuesto:.2f} USD. Deja un margen de 5 a 10 % para imprevistos.
-2. Las cantidades deben alcanzar para {personas} persona(s) durante 30 días.
+   MENOR O IGUAL a {presupuesto:.2f} USD. NO hace falta gastar todo: si sobra dinero,
+   déjalo como ahorro. NUNCA aumentes cantidades para llegar al presupuesto.
+2. Cantidades REALISTAS para {personas} persona(s) durante 30 días, según esta guía
+   de consumo típico POR PERSONA AL MES (multiplícala por {personas}):
+   arroz 4-6 kg; aceite 0,5-0,8 litros; azúcar 0,5-1 kg; sal 0,25 kg; huevos 20-30;
+   pollo, carne y pescado 3-5 kg en total; atún 4-6 latas; menestras 1-2 kg;
+   leche 4-8 litros; verde, yuca y papa 4-6 kg en total; frutas 4-6 kg;
+   verduras 4-6 kg; pan 2-4 kg; avena 0,5-1 kg; fideo 1-2 kg.
 3. Asigna cada producto a la tienda más barata para ese tipo de producto
    (por lo general: frutas, verduras y proteína fresca en mercado o feria; granos,
    aceite y productos empacados en supermercado o al por mayor). Si una tienda
@@ -309,6 +315,63 @@ def tabla_items(items: list[ItemCompra]) -> list[dict]:
     return filas
 
 
+# Consumo máximo razonable por persona al mes (palabra clave -> (cantidad, "kg" | "l" | "u")).
+TOPE_POR_PERSONA = {
+    "aceite": (0.8, "l"), "arroz": (6, "kg"), "azúcar": (1, "kg"), "azucar": (1, "kg"), "sal": (0.25, "kg"),
+    "huevo": (30, "u"), "leche": (8, "l"), "avena": (1, "kg"), "fideo": (2, "kg"), "lenteja": (2, "kg"),
+    "fréjol": (2, "kg"), "frejol": (2, "kg"), "atún": (6, "u"), "atun": (6, "u"), "pan": (4, "kg"),
+}
+_FACTOR = {"kg": ("kg", 1), "kilo": ("kg", 1), "lb": ("kg", 0.4536), "libra": ("kg", 0.4536),
+           "g": ("kg", 0.001), "gr": ("kg", 0.001), "l": ("l", 1), "litro": ("l", 1), "ml": ("l", 0.001),
+           "cubeta": ("u", 30), "docena": ("u", 12), "lata": ("u", 1), "unidad": ("u", 1), "unidades": ("u", 1)}
+
+
+def _por_unidad(unidad: str, dim: str = "") -> tuple[str, float] | None:
+    """'botella 900 ml' -> ('l', 0.9); 'funda 2 kg' -> ('kg', 2); 'lata 140 g' con dim 'u' -> ('u', 1)."""
+    import re
+
+    texto = unidad.lower().replace(",", ".")
+    if dim == "u":  # se cuenta por piezas: lata, cubeta, docena…
+        for palabra, (d, f) in _FACTOR.items():
+            if d == "u" and re.search(rf"\b{palabra}s?\b", texto):
+                return d, f
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(kg|kilo|lb|libra|gr|g|ml|litro|l)\b", texto)
+    if m:
+        dim, f = _FACTOR[m.group(2)]
+        return dim, float(m.group(1)) * f
+    for palabra, (dim, f) in _FACTOR.items():
+        if re.search(rf"\b{palabra}s?\b", texto):
+            return dim, f
+    return None
+
+
+def ajustar_cantidades(items: list[ItemCompra], personas: int) -> list[str]:
+    """Baja las cantidades exageradas al consumo máximo razonable. Devuelve avisos."""
+    import math
+
+    avisos = []
+    for it in items:
+        nombre = it.producto.lower()
+        clave = next((k for k in TOPE_POR_PERSONA if k in nombre), None)
+        if not clave:
+            continue
+        tope, dim = TOPE_POR_PERSONA[clave]
+        conv = _por_unidad(it.unidad, dim)
+        if not conv:
+            continue
+        dim_item, por_unidad = conv
+        if dim_item != dim or por_unidad <= 0:
+            continue
+        maximo = tope * max(personas, 1)
+        if it.cantidad * por_unidad > maximo * 1.15:
+            nueva = max(1, math.ceil(maximo / por_unidad - 1e-9))
+            if nueva < it.cantidad:
+                avisos.append(f"Ajusté {it.producto}: de {it.cantidad:g} a {nueva:g} {it.unidad}, "
+                              f"suficiente para {personas} persona(s) al mes.")
+                it.cantidad = nueva
+    return avisos
+
+
 # ---------------------------------------------------------------------------
 # Llamada a Gemini con manejo de errores y cuotas
 # ---------------------------------------------------------------------------
@@ -415,6 +478,9 @@ def generar_plan(cliente, presupuesto, personas, comidas, ciudad, tiendas, restr
 
     if not items:
         raise ErrorIA("La IA no propuso ningún producto válido. Intenta de nuevo.")
+
+    avisos = ajustar_cantidades(items, personas) + avisos
+    total = total_plan(items)
 
     plan.items = items
     return {

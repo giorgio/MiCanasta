@@ -26,7 +26,7 @@ try:  # componente para leer el GPS del navegador
 except Exception:  # noqa: BLE001
     get_geolocation = None
 
-st.set_page_config(page_title="Canastas", page_icon="🛒", layout="centered")
+st.set_page_config(page_title="Canastas", page_icon="🛒", layout="wide")
 
 VERDE = [46, 125, 50]
 ROJO = [211, 47, 47]
@@ -296,6 +296,7 @@ def paso_tiendas():
     st.dataframe(
         filas, hide_index=True, width="stretch", height=alto(filas),
         column_config={t: st.column_config.NumberColumn(t, format="$%.2f") for t in cats}
+        | {"Producto": st.column_config.TextColumn(width="medium")}
         | {"Ahorro vs. más caro": st.column_config.NumberColumn(format="$%.2f")},
     )
 
@@ -311,7 +312,9 @@ def paso_tiendas():
     lista.sort(key=lambda x: (-int(x["Con precio"].split()[0]), x["Tus productos"], float(x["Distancia"].split()[0])))
     st.dataframe(
         lista, hide_index=True, width="stretch", height=alto(lista),
-        column_config={"Tus productos": st.column_config.NumberColumn(format="$%.2f"),
+        column_config={"Tienda": st.column_config.TextColumn(width="large"),
+                       "Tipo": st.column_config.TextColumn(width="medium"),
+                       "Tus productos": st.column_config.NumberColumn(format="$%.2f"),
                        "Cómo llegar": st.column_config.LinkColumn(display_text="Abrir mapa")},
     )
     with st.expander("Ver el precio de hoy en la web de cada tienda"):

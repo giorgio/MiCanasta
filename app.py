@@ -358,6 +358,7 @@ def paso_lista():
         precios = n.precios_como_texto(datos["comp"], tiendas) if datos else ""
         with st.spinner("Armando tu lista del mes… puede tardar hasta un minuto. No cierres la página."):
             try:
+                st.session_state.pop("recetario", None)
                 st.session_state["resultado"] = n.generar_plan(
                     cliente, pres, personas, st.session_state["comidas"], st.session_state["ciudad"], tiendas,
                     st.session_state["restricciones"], st.session_state["en_casa"], precios,
@@ -412,48 +413,39 @@ def paso_lista():
 
 
 def seccion_recetario(plan):
-    """Una receta saludable por semana con lo comprado, para el calendario del celular."""
+    """Una receta saludable por semana con lo comprado; se crea sola, sin preguntar."""
     from datetime import date, timedelta
 
     with st.container(border=True):
-        st.subheader("🥗 Una receta saludable cada semana")
-        st.write("Crea 4 recetas con lo que vas a comprar y añádelas a tu calendario: "
-                 "cada semana te llegará un aviso con la receta.")
+        st.subheader("🥗 Tu receta saludable de cada semana")
+        if "recetario" not in st.session_state:
+            puede_consultar()
+            cliente = obtener_cliente()
+            with st.spinner("Preparando una receta para cada semana con lo que vas a comprar…"):
+                try:
+                    st.session_state["recetario"], _ = n.generar_recetario(
+                        cliente, plan.items, st.session_state["personas"], st.session_state["restricciones"])
+                except n.ErrorIA as e:
+                    st.warning("No pude preparar las recetas de la semana ahora. " + str(e))
+                    return
+        rec = st.session_state["recetario"]
         hoy = date.today()
-        proximo_domingo = hoy + timedelta(days=(6 - hoy.weekday()) or 7)
-        c1, c2 = st.columns(2)
-        primer_dia = c1.date_input("Primer aviso", value=proximo_domingo, min_value=hoy, format="DD/MM/YYYY")
-        hora = c2.selectbox("Hora del aviso", list(range(6, 21)), index=3, format_func=lambda h: f"{h}:00")
-        if st.button("Crear mis 4 recetas semanales", type="primary"):
-            if puede_consultar():
-                cliente = obtener_cliente()
-                with st.spinner("Creando tus recetas de la semana… unos 20 segundos"):
-                    try:
-                        st.session_state["recetario"], _ = n.generar_recetario(
-                            cliente, plan.items, st.session_state["personas"], st.session_state["restricciones"])
-                    except n.ErrorIA as e:
-                        st.error(str(e))
-        rec = st.session_state.get("recetario")
-        if not rec:
-            return
-        pestanas = st.tabs([f"Semana {s.semana}" for s in rec.semanas])
+        primer_dia = hoy + timedelta(days=(6 - hoy.weekday()) or 7)  # próximo domingo
+        pestanas = st.tabs([f"Semana {s.semana} · {primer_dia + timedelta(weeks=s.semana - 1):%d/%m}"
+                            for s in rec.semanas])
         for tab, s in zip(pestanas, rec.semanas):
             r = s.receta
             with tab:
-                fecha = primer_dia + timedelta(weeks=s.semana - 1)
-                st.markdown(f"**{r.nombre}** · {fecha:%d/%m} · {r.porciones} porciones · {r.tiempo_minutos} min · "
+                st.markdown(f"**{r.nombre}** · {r.porciones} porciones · {r.tiempo_minutos} min · "
                             f"~{r.calorias_aprox_por_porcion} kcal y {r.proteina_g_aprox_por_porcion} g de proteína por porción")
                 st.markdown("**Ingredientes:** " + ", ".join(r.ingredientes_que_tienes))
                 for i, p in enumerate(r.pasos, 1):
                     st.markdown(f"{i}. {p}")
                 st.caption("💚 " + r.por_que_es_nutritiva)
-        d1, d2 = st.columns(2)
-        d1.download_button("📅 Añadir a mi calendario", n.recetario_ics(rec, primer_dia, hora).encode("utf-8"),
+        st.download_button("📅 Recibir una receta cada domingo en mi calendario",
+                           n.recetario_ics(rec, primer_dia, 12).encode("utf-8"),
                            "recetas_semanales.ics", "text/calendar", width="stretch", type="primary")
-        d2.download_button("Descargar recetas (TXT)", n.recetario_texto(rec).encode("utf-8"),
-                           "recetas_semanales.txt", "text/plain", width="stretch")
-        st.caption("En el celular, abre el archivo descargado y elige tu calendario (Google Calendar o Calendario). "
-                   "Recibirás un aviso cada semana con la receta.")
+        st.caption("Abre el archivo en tu celular y cada domingo a las 12:00 te llegará el aviso con la receta de esa semana.")
 
 
 # ---------------------------------------------------------------------------

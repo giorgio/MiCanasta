@@ -32,6 +32,9 @@ Reglas: usar sobre todo lo disponible (se asume sal, agua y aceite); faltantes b
 ## 4. Comparar precios (`PROMPT_COMPARAR`)
 Variables: `productos`, `tiendas`, `ciudad`, `precios_conocidos`. Pide la misma presentación para todas las tiendas (para que sean comparables), todas las tiendas en cada fila, 0 si no lo venden, y respeta los precios que el usuario vio. La app decide cuál es la más barata y calcula ahorros y totales.
 
+## 5. Recetario semanal (`PROMPT_RECETARIO`)
+Variables: `ingredientes` (los productos de la lista del mes), `personas`, `restricciones`. Pide 4 recetas distintas y equilibradas, solo con lo comprado, platos caseros de Ecuador de máximo 60 minutos. La app las ordena por semana y genera el calendario .ics con un aviso semanal.
+
 ## Prompts usados con el agente de programación
 1. *"Lee AGENTS.md. Construye una app Streamlit con dos pestañas: plan de compras mensual por tienda y recetas con lo que hay en casa. Separa interfaz (app.py) y lógica (nucleo.py). Usa google-genai con salida JSON estructurada mediante Pydantic."*
 2. *"La IA a veces suma mal. Haz que la app calcule los totales y, si se pasa del presupuesto, pida una corrección una sola vez."*
@@ -40,3 +43,5 @@ Variables: `productos`, `tiendas`, `ciudad`, `precios_conocidos`. Pide la misma 
 5. *"Agrega botones 'Cargar ejemplo' para que un usuario nuevo vea la app funcionando sin escribir nada."*
 6. *"La lista tardaba unos 100 segundos: baja el razonamiento del modelo a nivel bajo, limita a 22 productos y frases cortas."*
 7. *"Agrega una pestaña para comparar precios de varios productos entre varias tiendas y marca la más barata."*
+8. *"Rediseña la app en pasos: inicio con presupuesto, personas y ciudad; luego mapa fijo (tiendas en verde, yo en rojo) con los productos comparados y sin tiendas sin precio; al final la lista del mes."*
+9. *"Cada semana manda una receta saludable con lo comprado": se resolvió con un archivo de calendario .ics en vez de correos, para no guardar correos de usuarios.*

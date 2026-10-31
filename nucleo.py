@@ -363,7 +363,7 @@ def generar_plan(cliente, presupuesto, personas, comidas, ciudad, tiendas, restr
         presupuesto=presupuesto,
         personas=personas,
         comidas=comidas,
-        ciudad=ciudad or "Ecuador (costa)",
+        ciudad=ciudad or "Guayaquil, Ecuador",
         tiendas=", ".join(tiendas),
         restricciones=restricciones or "ninguna",
         en_casa=en_casa or "nada",
@@ -426,7 +426,7 @@ def validar_comparacion(productos: list[str], tiendas: list[str]) -> Validacion:
 def comparar_precios(cliente, productos, tiendas, ciudad="", precios_conocidos=""):
     prompt = PROMPT_COMPARAR.format(
         productos=", ".join(productos), tiendas=", ".join(tiendas),
-        ciudad=ciudad or "Ecuador (costa)", precios_conocidos=precios_conocidos or "ninguno",
+        ciudad=ciudad or "Guayaquil, Ecuador", precios_conocidos=precios_conocidos or "ninguno",
     )
     comp, modelo = llamar_gemini(cliente, prompt, Comparacion)
     if not comp.filas:

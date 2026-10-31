@@ -25,8 +25,8 @@ EJEMPLO = dict(
     presupuesto=250.0,
     personas=4,
     comidas=3,
-    ciudad="Balao, Guayas",
-    tiendas=["Mercado municipal", "Tienda de barrio", "Tía"],
+    ciudad="Guayaquil, Guayas",
+    tiendas=["Mercado municipal", "Tía", "Mi Comisariato", "Supermaxi"],
     restricciones="Sin cerdo. Un niño de 6 años.",
     en_casa="2 kg de arroz, sal, 1 litro de aceite",
     precios="",
@@ -99,11 +99,11 @@ def seccion_ubicacion():
         g1, g2, g3 = st.columns([1.2, 2, 1])
         if g1.button("📡 Usar mi ubicación (GPS)", disabled=get_geolocation is None):
             st.session_state["pedir_gps"] = True
-        lugar = g2.text_input("…o escribe tu ciudad o barrio", placeholder="Ej.: Balao, Guayas", key="in_lugar",
+        lugar = g2.text_input("…o escribe tu ciudad o barrio", placeholder="Ej.: Urdesa, Guayaquil", key="in_lugar",
                               label_visibility="collapsed")
         if g3.button("Buscar ciudad"):
             if not lugar.strip():
-                st.warning("Escribe una ciudad, por ejemplo 'Balao, Guayas'.")
+                st.warning("Escribe una ciudad, por ejemplo 'Guayaquil' o 'Urdesa, Guayaquil'.")
             else:
                 try:
                     st.session_state["punto"] = geocodificar(lugar.strip())
@@ -169,12 +169,13 @@ def csv_de(filas: list[dict]) -> bytes:
 
 
 VALORES_INICIALES = dict(
-    presupuesto=150.0, personas=2, comidas=3, ciudad="",
-    tiendas=["Mercado municipal", "Tía"], restricciones="", en_casa="", precios="",
+    presupuesto=150.0, personas=2, comidas=3, ciudad="Guayaquil, Guayas",
+    tiendas=["Mercado municipal", "Tía", "Supermaxi"], restricciones="", en_casa="", precios="",
 )
 for _k, _v in VALORES_INICIALES.items():
     st.session_state.setdefault(f"in_{_k}", _v)
 st.session_state.setdefault("in_ingredientes", "")
+st.session_state.setdefault("in_lugar", "Guayaquil, Guayas")
 
 
 def cargar_ejemplo_recetas():
@@ -230,7 +231,7 @@ with tab_plan:
         personas = c2.number_input("¿Cuántas personas comen?", min_value=1, max_value=15, key="in_personas")
         comidas = c3.selectbox("Comidas al día", [2, 3, 4], key="in_comidas")
 
-        ciudad = st.text_input("Ciudad o sector (opcional)", placeholder="Ej.: Balao, Guayas", key="in_ciudad")
+        ciudad = st.text_input("Ciudad o sector (opcional)", placeholder="Ej.: Guayaquil, Guayas", key="in_ciudad")
         tiendas = st.multiselect(
             "¿Dónde puedes comprar?", n.TIENDAS_DISPONIBLES, key="in_tiendas",
         )
@@ -335,10 +336,10 @@ with tab_comparar:
         )
         tiendas_cmp = st.multiselect(
             "Tiendas a comparar", n.TIENDAS_DISPONIBLES,
-            default=["Mercado municipal", "Tía", "Mi Comisariato", "Akí / Gran Akí"], key="cmp_tiendas",
+            default=["Mercado municipal", "Tía", "Mi Comisariato", "Supermaxi", "Akí / Gran Akí"], key="cmp_tiendas",
         )
         c1, c2 = st.columns(2)
-        ciudad_cmp = c1.text_input("Ciudad (opcional)", placeholder="Ej.: Balao, Guayas", key="cmp_ciudad")
+        ciudad_cmp = c1.text_input("Ciudad (opcional)", value="Guayaquil, Guayas", key="cmp_ciudad")
         vistos = c2.text_input("Precios que viste hoy (opcional)", placeholder="Ej.: huevos 4.50 en el mercado",
                                key="cmp_vistos")
         comparar = st.form_submit_button("Comparar precios", type="primary")

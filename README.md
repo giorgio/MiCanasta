@@ -8,7 +8,7 @@ Aplicación web que ayuda a una familia a **estirar su presupuesto mensual de co
 
 ## Problema y usuario
 
-Hogares de la costa ecuatoriana (por ejemplo, en Balao) con un presupuesto fijo y ajustado para la comida. Hoy organizan la compra "de memoria": van al mercado o al supermercado sin lista, compran por impulso y a fin de mes falta dinero o falta comida. Cuando hay pocos ingredientes en casa, terminan cocinando siempre lo mismo.
+Hogares de la costa ecuatoriana (por ejemplo, en Guayaquil) con un presupuesto fijo y ajustado para la comida. Hoy organizan la compra "de memoria": van al mercado o al supermercado sin lista, compran por impulso y a fin de mes falta dinero o falta comida. Cuando hay pocos ingredientes en casa, terminan cocinando siempre lo mismo.
 
 **Qué resuelve la IA:** estimar cantidades y precios para todo un mes, repartir la compra entre tiendas y crear recetas con ingredientes concretos.
 **Qué queda fuera:** precios exactos en tiempo real (son estimaciones), consejo médico o dietas clínicas.

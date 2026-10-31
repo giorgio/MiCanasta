@@ -1,7 +1,7 @@
 """Tiendas cercanas (OpenStreetMap) y enlaces para ver el precio actual.
 
 Todo es gratuito y no necesita clave:
-- Nominatim convierte "Balao, Guayas" en coordenadas.
+- Nominatim convierte "Guayaquil, Guayas" en coordenadas.
 - Overpass busca supermercados, mercados y tiendas alrededor de un punto.
 Ambos servicios piden identificarse con un User-Agent y no abusar de ellos,
 por eso los resultados se guardan en caché.
@@ -91,7 +91,7 @@ def geocodificar(lugar: str) -> tuple[float, float, str]:
         if datos:
             break
     if not datos:
-        raise ErrorMapa(f"No encontré '{lugar}' en Ecuador. Prueba con 'ciudad, provincia', por ejemplo 'Balao, Guayas'.")
+        raise ErrorMapa(f"No encontré '{lugar}' en Ecuador. Prueba con 'ciudad, provincia', por ejemplo 'Guayaquil, Guayas'.")
     d = datos[0]
     return float(d["lat"]), float(d["lon"]), d.get("display_name", lugar)
 

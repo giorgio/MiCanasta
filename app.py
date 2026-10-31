@@ -84,6 +84,11 @@ def puede_consultar() -> bool:
     return True
 
 
+def alto(filas: list) -> int:
+    """Altura para mostrar la tabla completa, sin barra de desplazamiento."""
+    return 38 + 35 * max(len(filas), 1) + 3
+
+
 def csv_de(filas: list[dict]) -> bytes:
     buf = io.StringIO()
     w = csv.DictWriter(buf, fieldnames=list(filas[0].keys()))
@@ -289,14 +294,14 @@ def paso_tiendas():
     st.success(f"Para tus {nprod} productos, lo más barato cerca de ti es **{barata}**: "
                f"unos **{resumen[barata]['total']:.2f} USD**. {comp.nota}")
     st.dataframe(
-        filas, hide_index=True, width="stretch",
+        filas, hide_index=True, width="stretch", height=alto(filas),
         column_config={t: st.column_config.NumberColumn(t, format="$%.2f") for t in cats}
         | {"Ahorro vs. más caro": st.column_config.NumberColumn(format="$%.2f")},
     )
 
-    st.subheader("🏪 Tiendas cercanas con precios")
+    st.subheader(f"🏪 {len(visibles)} tiendas cercanas con precios")
     lista = []
-    for t in visibles[:30]:
+    for t in visibles:
         r = resumen[u.categoria(t)]
         lista.append({
             "Tienda": t["nombre"], "Tipo": u.categoria(t), "Distancia": f"{t['distancia_km']} km",
@@ -305,7 +310,7 @@ def paso_tiendas():
         })
     lista.sort(key=lambda x: (-int(x["Con precio"].split()[0]), x["Tus productos"], float(x["Distancia"].split()[0])))
     st.dataframe(
-        lista, hide_index=True, width="stretch",
+        lista, hide_index=True, width="stretch", height=alto(lista),
         column_config={"Tus productos": st.column_config.NumberColumn(format="$%.2f"),
                        "Cómo llegar": st.column_config.LinkColumn(display_text="Abrir mapa")},
     )
@@ -376,7 +381,7 @@ def paso_lista():
 
     filas = n.tabla_items(plan.items)
     st.subheader("🧾 Lista de compras por tienda")
-    st.dataframe(filas, width="stretch", hide_index=True,
+    st.dataframe(filas, width="stretch", hide_index=True, height=alto(filas),
                  column_config={"Ver precio hoy": st.column_config.LinkColumn(display_text="Ver precio")})
     st.bar_chart(n.totales_por_tienda(plan.items), horizontal=True)
     d1, d2 = st.columns(2)

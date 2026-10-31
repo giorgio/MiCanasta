@@ -49,3 +49,7 @@ assert u.geocodificar("Balao")[:2] == (-2.9, -79.8)
 assert u.enlace_precio("arroz 5 kg", "Tía").startswith("https://www.tia.com.ec/catalogsearch/result/?q=arroz+5+kg")
 assert "Supermaxi" in u.enlace_precio("leche", "Supermaxi").replace("+", " ")
 print("PRUEBAS DE UBICACIÓN OK")
+assert u.categoria({"cadena": None, "tipo": "Mercado", "nombre": "Mercado Mayorista de Guayaquil"}) == "Mercado mayorista"
+assert u.categoria({"cadena": None, "tipo": "Otro", "nombre": "Farmacia"}) is None
+assert 12 < u.zoom_para_radio(-2.17, 3) < 15
+print("CATEGORÍAS Y ZOOM OK")

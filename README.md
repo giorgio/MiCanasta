@@ -15,8 +15,8 @@ Hogares de la costa ecuatoriana (por ejemplo, en Guayaquil) con un presupuesto f
 
 ## Funcionalidades
 
-- **📍 Tiendas cerca de ti:** con el GPS del celular o escribiendo la ciudad, muestra en un mapa los supermercados, mercados y tiendas reales cercanos (OpenStreetMap), con distancia y enlace para llegar. Un botón marca esas cadenas en el formulario.
-- **📊 Comparar precios:** eliges productos y tiendas (mercado, Tía, Mi Comisariato, Akí, Supermaxi, Coral, TuTi…) y ves el precio estimado de cada uno en cada tienda, cuál es la más barata, el ahorro y el total por tienda.
+- **📍 Tiendas cerca de ti:** con el GPS del celular o la ciudad, muestra en un mapa fijo (sin mover ni zoom) las tiendas reales cercanas en verde y tu ubicación en rojo (OpenStreetMap), con distancia y enlace para llegar.
+- **📊 Comparación automática:** al encontrar las tiendas cercanas, la app compara tus productos en cada tipo de tienda (mercado, Tía, Mi Comisariato, Akí, Supermaxi, Coral, TuTi…) y deja fuera las que no tienen precios. Ves el precio estimado de cada uno en cada tienda, cuál es la más barata, el ahorro y el total por tienda.
 - **Ver precio hoy:** cada producto de la lista tiene un enlace que abre la búsqueda de ese producto en la web de la tienda (Tía) o en Google, para confirmar el precio actual.
 
 | Pestaña | Entrada | Salida |
@@ -27,10 +27,10 @@ Hogares de la costa ecuatoriana (por ejemplo, en Guayaquil) con un presupuesto f
 
 ## Cómo usarla
 
-1. Abre la app y pulsa **Cargar ejemplo** para ver un caso completo.
-2. Cambia el presupuesto, las personas y marca tus tiendas.
-3. Pulsa **Armar mi lista** y descarga la lista para llevarla al mercado.
-4. En **¿Qué cocino hoy?**, escribe lo que tienes y pulsa **Dame recetas**.
+1. **Paso 1:** escribe tu presupuesto mensual, cuántas personas comen y tu ciudad o barrio (por defecto, Guayaquil).
+2. **Paso 2:** elige qué productos comparar y, si quieres, pulsa **Usar mi ubicación (GPS)**. Verás un mapa fijo con las tiendas cercanas en verde y tu ubicación en rojo, la tabla de precios de tus productos en cada tienda y la lista de tiendas cercanas ordenada de la más barata a la más cara. Las tiendas sin precios no aparecen.
+3. **Paso 3:** pulsa **Armar mi lista del mes** y la app arma la compra del mes con esas tiendas y esos precios. Puedes descargarla.
+4. En el menú lateral, **¿Qué cocino hoy?** te da recetas con lo que tienes en casa.
 
 ## Ejecutar en local
 

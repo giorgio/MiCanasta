@@ -300,12 +300,14 @@ def _codigo(e: Exception) -> int | None:
     return getattr(e, "code", None) or getattr(e, "status_code", None)
 
 
-def llamar_gemini(cliente, prompt: str, esquema, modelos=(MODELO_PRINCIPAL, MODELO_RESPALDO), reintentos: int = 1):
+def llamar_gemini(cliente, prompt: str, esquema, modelos=(MODELO_PRINCIPAL, MODELO_RESPALDO), reintentos: int = 1,
+                  razonamiento: str = "low"):
     """Pide JSON con 'esquema'. Si el modelo principal no tiene cuota o no existe,
     prueba con el de respaldo. Devuelve (objeto, modelo_usado)."""
     from google.genai import types  # import aquí para poder probar sin la librería
 
     ultimo_error: Exception | None = None
+    usar_nivel = True
     for modelo in modelos:
         for intento in range(reintentos + 1):
             try:
@@ -318,7 +320,7 @@ def llamar_gemini(cliente, prompt: str, esquema, modelos=(MODELO_PRINCIPAL, MODE
                         response_schema=esquema,
                         temperature=0.4,
                         max_output_tokens=12000,
-                        thinking_config=types.ThinkingConfig(thinking_level="low"),
+                        thinking_config=types.ThinkingConfig(thinking_level=razonamiento) if usar_nivel else None,
                     ),
                 )
                 obj = resp.parsed
@@ -335,6 +337,9 @@ def llamar_gemini(cliente, prompt: str, esquema, modelos=(MODELO_PRINCIPAL, MODE
                         "La clave de la API de Gemini no es válida o no tiene permiso. "
                         "Revisa el secreto GEMINI_API_KEY en la configuración de la app."
                     ) from e
+                if codigo == 400 and usar_nivel and "think" in str(e).lower():
+                    usar_nivel = False  # el modelo no acepta ese nivel: reintentar sin él
+                    continue
                 if codigo in (404, 429):
                     break  # este modelo no está disponible o no tiene cuota: probar el siguiente
                 if intento < reintentos:
@@ -408,7 +413,7 @@ def generar_recetas(cliente, ingredientes, personas, restricciones):
         personas=personas,
         restricciones=restricciones or "ninguna",
     )
-    resp, modelo = llamar_gemini(cliente, prompt, RespuestaRecetas)
+    resp, modelo = llamar_gemini(cliente, prompt, RespuestaRecetas, razonamiento="minimal")
     return resp, modelo
 
 
@@ -428,7 +433,7 @@ def comparar_precios(cliente, productos, tiendas, ciudad="", precios_conocidos="
         productos=", ".join(productos), tiendas=", ".join(tiendas),
         ciudad=ciudad or "Guayaquil, Ecuador", precios_conocidos=precios_conocidos or "ninguno",
     )
-    comp, modelo = llamar_gemini(cliente, prompt, Comparacion)
+    comp, modelo = llamar_gemini(cliente, prompt, Comparacion, razonamiento="minimal")
     if not comp.filas:
         raise ErrorIA("La IA no devolvió precios para comparar. Intenta de nuevo.")
     return comp, modelo
@@ -457,6 +462,34 @@ def tabla_comparacion(comp: Comparacion, tiendas: list[str]) -> tuple[list[dict]
                 totales[t] = round(totales[t] + validos[t], 2)
         filas.append(fila)
     return filas, totales, ganadas
+
+
+def resumen_por_tienda(comp: Comparacion, tiendas: list[str]) -> dict[str, dict]:
+    """Por tienda: total de los productos con precio y cuántos tienen precio."""
+    out = {t: {"total": 0.0, "con_precio": 0, "productos": len(comp.filas)} for t in tiendas}
+    for f in comp.filas:
+        for p in f.precios:
+            if p.tienda in out and p.precio_usd and p.precio_usd > 0:
+                out[p.tienda]["total"] = round(out[p.tienda]["total"] + p.precio_usd, 2)
+                out[p.tienda]["con_precio"] += 1
+    return out
+
+
+def tiendas_con_precio(comp: Comparacion, tiendas: list[str]) -> list[str]:
+    """Solo las tiendas que tienen precio en al menos un producto, de la más barata a la más cara."""
+    res = resumen_por_tienda(comp, tiendas)
+    con = [t for t in tiendas if res[t]["con_precio"] > 0]
+    return sorted(con, key=lambda t: (-res[t]["con_precio"], res[t]["total"]))
+
+
+def precios_como_texto(comp: Comparacion, tiendas: list[str]) -> str:
+    """Resumen de la comparación para que el plan del mes use los mismos precios."""
+    partes = []
+    for f in comp.filas:
+        ps = [f"{p.tienda} {p.precio_usd:.2f}" for p in f.precios if p.tienda in tiendas and p.precio_usd > 0]
+        if ps:
+            partes.append(f"{f.producto} ({f.presentacion}): " + ", ".join(ps))
+    return "; ".join(partes)
 
 
 # ---------------------------------------------------------------------------

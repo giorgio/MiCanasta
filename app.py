@@ -1,4 +1,10 @@
-"""Canasta Inteligente: plan de compras mensual y recetas nutritivas con IA.
+"""Canasta Inteligente: plan de compras mensual, tiendas cercanas y recetas con IA.
+
+Flujo en pasos:
+  1. Inicio: presupuesto, personas y ciudad.
+  2. Tiendas cerca: mapa fijo (tiendas en verde, tú en rojo) y comparación de precios.
+  3. Tu lista del mes, armada con esas tiendas y esos precios.
+  Aparte: ¿Qué cocino hoy? (recetas con lo que hay en casa).
 
 Ejecutar en local:  streamlit run app.py
 La clave de Gemini va en .streamlit/secrets.toml (local) o en los Secrets de
@@ -9,6 +15,7 @@ import csv
 import io
 import time
 
+import pydeck as pdk
 import streamlit as st
 
 import nucleo as n
@@ -19,25 +26,38 @@ try:  # componente para leer el GPS del navegador
 except Exception:  # noqa: BLE001
     get_geolocation = None
 
-st.set_page_config(page_title="Canasta Inteligente", page_icon="🛒", layout="wide")
+st.set_page_config(page_title="Canasta Inteligente", page_icon="🛒", layout="centered")
 
-EJEMPLO = dict(
-    presupuesto=250.0,
-    personas=4,
-    comidas=3,
-    ciudad="Guayaquil, Guayas",
-    tiendas=["Mercado municipal", "Tía", "Mi Comisariato", "Supermaxi"],
-    restricciones="Sin cerdo. Un niño de 6 años.",
-    en_casa="2 kg de arroz, sal, 1 litro de aceite",
-    precios="",
-)
+VERDE = [46, 125, 50]
+ROJO = [211, 47, 47]
+CANASTA_BASE = ["Arroz", "Aceite", "Huevos", "Pollo entero", "Atún en lata", "Leche", "Azúcar", "Lenteja"]
 EJEMPLO_RECETAS = "arroz, huevos, verde, cebolla, tomate, atún en lata, queso"
 ESPERA_ENTRE_CONSULTAS = 8  # segundos, para cuidar la cuota gratuita
+MAX_TIENDAS_COMPARAR = 6
+
+INICIALES = {
+    "paso": 1, "presupuesto": 150.0, "personas": 2, "ciudad": "Guayaquil, Guayas",
+    "productos": CANASTA_BASE, "radio": 3, "comidas": 3,
+    "restricciones": "", "en_casa": "", "in_ingredientes": "",
+}
+for _k, _v in INICIALES.items():
+    st.session_state.setdefault(_k, _v)
+
+ERRORES_GPS = {
+    0: "Tu navegador no permite leer la ubicación. Usaremos la ciudad que escribiste.",
+    1: "No diste permiso para usar tu ubicación. Usaremos la ciudad que escribiste.",
+    2: "No se pudo obtener tu ubicación. Usaremos la ciudad que escribiste.",
+    3: "El GPS tardó demasiado. Usaremos la ciudad que escribiste.",
+}
 
 
 # ---------------------------------------------------------------------------
-# Utilidades de interfaz
+# Utilidades
 # ---------------------------------------------------------------------------
+
+def ir(paso):
+    st.session_state["paso"] = paso
+
 
 def obtener_cliente():
     try:
@@ -56,13 +76,20 @@ def obtener_cliente():
 
 
 def puede_consultar() -> bool:
-    ultima = st.session_state.get("ultima_consulta", 0)
-    falta = ESPERA_ENTRE_CONSULTAS - (time.time() - ultima)
+    """Deja pasar unos segundos entre consultas para no agotar la cuota gratuita."""
+    falta = ESPERA_ENTRE_CONSULTAS - (time.time() - st.session_state.get("ultima_consulta", 0))
     if falta > 0:
-        st.warning(f"Espera {int(falta) + 1} segundos antes de volver a consultar a la IA.")
-        return False
+        time.sleep(falta)
     st.session_state["ultima_consulta"] = time.time()
     return True
+
+
+def csv_de(filas: list[dict]) -> bytes:
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=list(filas[0].keys()))
+    w.writeheader()
+    w.writerows(filas)
+    return buf.getvalue().encode("utf-8-sig")
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
@@ -75,329 +102,316 @@ def buscar_cercanas(lat: float, lon: float, radio: float):
     return u.tiendas_cercanas(lat, lon, radio)
 
 
-def usar_tiendas_cercanas():
-    opciones = [t for t in u.tiendas_para_plan(st.session_state.get("cercanas", [])) if t in n.TIENDAS_DISPONIBLES]
-    if opciones:
-        st.session_state["in_tiendas"] = opciones
+def mapa_fijo(lat: float, lon: float, radio_km: float, tiendas: list[dict]):
+    """Mapa que no se puede mover ni acercar: tiendas en verde, tu ubicación en rojo."""
+    capas = [
+        pdk.Layer(  # círculo del radio de búsqueda
+            "ScatterplotLayer", data=[{"lat": lat, "lon": lon}], get_position="[lon, lat]",
+            get_radius=radio_km * 1000, filled=False, stroked=True,
+            get_line_color=ROJO, line_width_min_pixels=1, opacity=0.35,
+        ),
+        pdk.Layer(
+            "ScatterplotLayer",
+            data=[{"lat": t["lat"], "lon": t["lon"], "nombre": t["nombre"], "info": f"{t['tipo']} · {t['distancia_km']} km"}
+                  for t in tiendas],
+            get_position="[lon, lat]", get_fill_color=VERDE, get_line_color=[255, 255, 255],
+            stroked=True, line_width_min_pixels=1, radius_min_pixels=6, radius_max_pixels=9, pickable=True,
+        ),
+        pdk.Layer(  # tú: punto rojo grande con borde blanco
+            "ScatterplotLayer", data=[{"lat": lat, "lon": lon, "nombre": "Estás aquí", "info": ""}],
+            get_position="[lon, lat]", get_fill_color=ROJO, get_line_color=[255, 255, 255],
+            stroked=True, line_width_min_pixels=2, radius_min_pixels=9, radius_max_pixels=11, pickable=True,
+        ),
+    ]
+    deck = pdk.Deck(
+        layers=capas,
+        initial_view_state=pdk.ViewState(latitude=lat, longitude=lon, zoom=u.zoom_para_radio(lat, radio_km)),
+        views=[pdk.View(type="MapView", controller=False)],  # sin mover ni zoom
+        tooltip={"text": "{nombre}\n{info}"},
+        map_style="light",
+    )
+    st.pydeck_chart(deck, height=380)
+    st.caption("🟢 Tiendas · 🔴 Tú · El círculo marca el radio de búsqueda.")
 
 
-ERRORES_GPS = {
-    0: "Tu navegador no permite leer la ubicación. Escribe tu ciudad.",
-    1: "No diste permiso para usar tu ubicación. Puedes escribir tu ciudad en su lugar.",
-    2: "No se pudo obtener tu ubicación. Escribe tu ciudad.",
-    3: "El GPS tardó demasiado. Intenta de nuevo o escribe tu ciudad.",
-}
+# ---------------------------------------------------------------------------
+# Cabecera
+# ---------------------------------------------------------------------------
+
+st.title("🛒 Canasta Inteligente")
+
+paso = st.session_state["paso"]
+if paso in (1, 2, 3):
+    st.progress(paso / 3, text=["", "Paso 1 de 3 · Tus datos", "Paso 2 de 3 · Tiendas y precios",
+                                "Paso 3 de 3 · Tu lista del mes"][paso])
+
+with st.sidebar:
+    st.header("Menú")
+    st.button("🧾 Mi compra del mes", on_click=ir, args=(1,), width="stretch")
+    st.button("🍳 ¿Qué cocino hoy?", on_click=ir, args=("recetas",), width="stretch")
+    st.divider()
+    st.info(
+        "Los precios son **estimaciones** hechas por IA. Usa los enlaces **Ver precio** para confirmar "
+        "el precio de hoy. La información nutricional es aproximada."
+    )
+    st.caption("No escribas datos personales: lo que ingresas se envía a la IA de Google.")
 
 
-def seccion_ubicacion():
-    with st.container(border=True):
-        st.subheader("📍 Tiendas cerca de ti")
-        st.caption(
-            "Usa el GPS o escribe tu ciudad para ver los mercados y supermercados reales que tienes cerca "
-            "(datos de OpenStreetMap). Tu ubicación solo se usa para esta búsqueda y no se guarda."
-        )
-        g1, g2, g3 = st.columns([1.2, 2, 1])
-        if g1.button("📡 Usar mi ubicación (GPS)", disabled=get_geolocation is None):
-            st.session_state["pedir_gps"] = True
-        lugar = g2.text_input("…o escribe tu ciudad o barrio", placeholder="Ej.: Urdesa, Guayaquil", key="in_lugar",
-                              label_visibility="collapsed")
-        if g3.button("Buscar ciudad"):
-            if not lugar.strip():
-                st.warning("Escribe una ciudad, por ejemplo 'Guayaquil' o 'Urdesa, Guayaquil'.")
-            else:
-                try:
-                    st.session_state["punto"] = geocodificar(lugar.strip())
-                except u.ErrorMapa as e:
-                    st.error(str(e))
-        radio = st.slider("Radio de búsqueda (km)", 1, 25, 8, key="in_radio")
+# ---------------------------------------------------------------------------
+# Paso 1: inicio sencillo
+# ---------------------------------------------------------------------------
 
-        if st.session_state.get("pedir_gps") and get_geolocation:
-            loc = get_geolocation()
-            if not loc:
-                st.info("Esperando tu ubicación… si el navegador pregunta, pulsa **Permitir**.")
-            elif "error" in loc:
-                st.session_state["pedir_gps"] = False
-                st.warning(ERRORES_GPS.get(loc["error"].get("code"), ERRORES_GPS[2]))
-            else:
-                c = loc["coords"]
-                st.session_state["punto"] = (c["latitude"], c["longitude"], "Tu ubicación actual")
-                st.session_state["pedir_gps"] = False
+def paso_inicio():
+    st.write("Dime cuánto tienes para la comida del mes y te digo **dónde comprar más barato** y **qué comprar**.")
+    with st.form("form_inicio", border=True):
+        pres = st.number_input("💵 ¿Cuál es tu presupuesto mensual para comida? (USD)", min_value=0.0,
+                               max_value=10000.0, step=10.0, value=float(st.session_state["presupuesto"]))
+        pers = st.number_input("👨‍👩‍👧 ¿Cuántas personas comen en casa?", min_value=1, max_value=15,
+                               value=int(st.session_state["personas"]))
+        ciudad = st.text_input("📍 ¿En qué ciudad o barrio vives?", placeholder="Ej.: Urdesa, Guayaquil",
+                               value=st.session_state["ciudad"])
+        seguir = st.form_submit_button("Continuar →", type="primary", width="stretch")
+    if seguir:
+        val = n.validar_plan(pres, pers, ["-"])
+        if not ciudad.strip():
+            val.errores.append("Escribe tu ciudad o barrio.")
+        for e in val.errores:
+            st.error(e)
+        if val.ok:
+            st.session_state.update(presupuesto=pres, personas=pers, ciudad=ciudad.strip())
+            for k in ("punto", "comparacion", "resultado"):
+                st.session_state.pop(k, None)
+            ir(2)
+            st.rerun()
 
-        punto = st.session_state.get("punto")
-        if not punto:
-            return
-        lat, lon, nombre = punto
+
+# ---------------------------------------------------------------------------
+# Paso 2: tiendas cercanas + comparación automática
+# ---------------------------------------------------------------------------
+
+def ubicar():
+    """Fija el punto de búsqueda: GPS si se pidió, si no la ciudad del paso 1."""
+    if st.session_state.get("pedir_gps") and get_geolocation:
+        loc = get_geolocation()
+        if not loc:
+            st.info("Esperando tu ubicación… si el navegador pregunta, pulsa **Permitir**.")
+            st.stop()
+        st.session_state["pedir_gps"] = False
+        if "error" in loc:
+            st.warning(ERRORES_GPS.get(loc["error"].get("code"), ERRORES_GPS[2]))
+        else:
+            c = loc["coords"]
+            st.session_state["punto"] = (c["latitude"], c["longitude"], "tu ubicación actual")
+            st.session_state.pop("comparacion", None)
+    if "punto" not in st.session_state:
         try:
-            with st.spinner("Buscando tiendas cercanas…"):
-                tiendas = buscar_cercanas(round(lat, 3), round(lon, 3), float(radio))
+            st.session_state["punto"] = geocodificar(st.session_state["ciudad"].strip())
         except u.ErrorMapa as e:
             st.error(str(e))
+            st.button("← Cambiar ciudad", on_click=ir, args=(1,))
+            st.stop()
+
+
+def comparar_cercanas(tiendas: list[dict]):
+    """Compara los productos elegidos en los tipos de tienda que hay cerca."""
+    categorias = []
+    for t in tiendas:  # ya vienen ordenadas por distancia
+        c = u.categoria(t)
+        if c and c not in categorias and c in n.TIENDAS_DISPONIBLES:
+            categorias.append(c)
+    categorias = categorias[:MAX_TIENDAS_COMPARAR]
+    clave = (tuple(st.session_state["productos"]), tuple(categorias), st.session_state["ciudad"])
+    previa = st.session_state.get("comparacion")
+    if previa and previa["clave"] == clave:
+        return previa
+    if not categorias:
+        return None
+    if not puede_consultar():
+        st.stop()
+    cliente = obtener_cliente()
+    with st.spinner("Comparando precios en las tiendas cercanas… unos 20 segundos"):
+        try:
+            comp, _ = n.comparar_precios(cliente, st.session_state["productos"], categorias,
+                                         st.session_state["ciudad"])
+        except n.ErrorIA as e:
+            st.error(str(e))
+            st.stop()
+    datos = {"clave": clave, "comp": comp, "categorias": categorias,
+             "con_precio": n.tiendas_con_precio(comp, categorias)}
+    st.session_state["comparacion"] = datos
+    return datos
+
+
+def paso_tiendas():
+    st.button("← Cambiar mis datos", on_click=ir, args=(1,))
+    with st.container(border=True):
+        st.session_state["productos"] = st.multiselect(
+            "🛍️ ¿Qué productos quieres comparar?", n.PRODUCTOS_COMUNES, default=st.session_state["productos"],
+            accept_new_options=True, max_selections=n.MAX_PRODUCTOS_COMPARAR)
+        c1, c2 = st.columns([1, 1])
+        if c1.button("📡 Usar mi ubicación (GPS)", disabled=get_geolocation is None, width="stretch"):
+            st.session_state["pedir_gps"] = True
+        st.session_state["radio"] = c2.select_slider(
+            "Distancia máxima", options=[1, 2, 3, 5, 8, 12], value=st.session_state["radio"],
+            format_func=lambda x: f"{x} km")
+    if not st.session_state["productos"]:
+        st.warning("Elige al menos un producto para comparar.")
+        return
+
+    ubicar()
+    lat, lon, nombre = st.session_state["punto"]
+    radio = st.session_state["radio"]
+    try:
+        with st.spinner("Buscando tiendas cercanas…"):
+            cercanas = buscar_cercanas(round(lat, 4), round(lon, 4), float(radio))
+    except u.ErrorMapa as e:
+        st.error(str(e))
+        return
+    st.session_state["cercanas"] = cercanas
+
+    st.subheader(f"📍 Tiendas a menos de {radio} km de {nombre.split(',')[0]}")
+    datos = comparar_cercanas(cercanas) if cercanas else None
+    con_precio = set(datos["con_precio"]) if datos else set()
+    visibles = [t for t in cercanas if u.categoria(t) in con_precio]  # sin precio, fuera de la lista
+    mapa_fijo(lat, lon, radio, visibles)
+
+    if not visibles:
+        st.info("No encontré tiendas con precios en esa distancia. Aumenta la distancia o cambia de barrio.")
+        return
+
+    comp, cats = datos["comp"], datos["con_precio"]
+    resumen = n.resumen_por_tienda(comp, cats)
+    filas, _, ganadas = n.tabla_comparacion(comp, cats)
+    nprod = len(comp.filas)
+
+    st.subheader("💰 Tus productos, comparados")
+    barata = cats[0]
+    st.success(f"Para tus {nprod} productos, lo más barato cerca de ti es **{barata}**: "
+               f"unos **{resumen[barata]['total']:.2f} USD**. {comp.nota}")
+    st.dataframe(
+        filas, hide_index=True, width="stretch",
+        column_config={t: st.column_config.NumberColumn(t, format="$%.2f") for t in cats}
+        | {"Ahorro vs. más caro": st.column_config.NumberColumn(format="$%.2f")},
+    )
+
+    st.subheader("🏪 Tiendas cercanas con precios")
+    lista = []
+    for t in visibles[:30]:
+        r = resumen[u.categoria(t)]
+        lista.append({
+            "Tienda": t["nombre"], "Tipo": u.categoria(t), "Distancia": f"{t['distancia_km']} km",
+            "Tus productos": round(r["total"], 2), "Con precio": f"{r['con_precio']} de {nprod}",
+            "Cómo llegar": u.enlace_mapa(t["lat"], t["lon"], t["nombre"]),
+        })
+    lista.sort(key=lambda x: (-int(x["Con precio"].split()[0]), x["Tus productos"], float(x["Distancia"].split()[0])))
+    st.dataframe(
+        lista, hide_index=True, width="stretch",
+        column_config={"Tus productos": st.column_config.NumberColumn(format="$%.2f"),
+                       "Cómo llegar": st.column_config.LinkColumn(display_text="Abrir mapa")},
+    )
+    with st.expander("Ver el precio de hoy en la web de cada tienda"):
+        for f in filas:
+            enlaces = " · ".join(f"[{t}]({u.enlace_precio(f['Producto'], t)})" for t in cats)
+            st.markdown(f"**{f['Producto']}** ({f['Presentación']}): {enlaces}")
+    st.caption("Precios estimados por IA. Confírmalos con los enlaces o en la tienda.")
+
+    st.button("Armar mi lista del mes con estas tiendas →", type="primary", width="stretch",
+              on_click=ir, args=(3,))
+
+
+# ---------------------------------------------------------------------------
+# Paso 3: lista del mes
+# ---------------------------------------------------------------------------
+
+def paso_lista():
+    st.button("← Volver a las tiendas", on_click=ir, args=(2,))
+    datos = st.session_state.get("comparacion")
+    tiendas = datos["con_precio"] if datos else ["Mercado municipal", "Tía", "Supermaxi"]
+    pres, personas = st.session_state["presupuesto"], st.session_state["personas"]
+    st.write(f"**{pres:.2f} USD** para **{personas}** persona(s) en **{st.session_state['ciudad']}** · "
+             f"Tiendas: {', '.join(tiendas)}")
+
+    with st.expander("Ajustar mi lista (opcional)"):
+        st.session_state["comidas"] = st.selectbox("Comidas al día", [2, 3, 4],
+                                                   index=[2, 3, 4].index(st.session_state["comidas"]))
+        st.session_state["restricciones"] = st.text_input(
+            "Preferencias o restricciones", value=st.session_state["restricciones"],
+            placeholder="Ej.: vegetariano, sin cerdo, hay un bebé")
+        st.session_state["en_casa"] = st.text_input("¿Qué ya tienes en casa?", value=st.session_state["en_casa"],
+                                                    placeholder="Ej.: 2 kg de arroz, aceite")
+        rehacer = st.button("Volver a armar la lista")
+
+    for a in n.validar_plan(pres, personas, tiendas).avisos:
+        st.warning(a)
+
+    if "resultado" not in st.session_state or rehacer:
+        if not puede_consultar():
             return
-        st.session_state["cercanas"] = tiendas
-        st.markdown(f"**{len(tiendas)} tiendas** a menos de {radio} km de *{nombre}*.")
-        if not tiendas:
-            st.info("No hay tiendas registradas en el mapa en esa zona. Aumenta el radio o elige tus tiendas a mano.")
-            return
-        import pandas as pd
+        cliente = obtener_cliente()
+        precios = n.precios_como_texto(datos["comp"], tiendas) if datos else ""
+        with st.spinner("Armando tu lista del mes… puede tardar hasta un minuto. No cierres la página."):
+            try:
+                st.session_state["resultado"] = n.generar_plan(
+                    cliente, pres, personas, st.session_state["comidas"], st.session_state["ciudad"], tiendas,
+                    st.session_state["restricciones"], st.session_state["en_casa"], precios,
+                    cercanas=u.resumen_cercanas(st.session_state.get("cercanas", [])),
+                )
+            except n.ErrorIA as e:
+                st.error(str(e))
+                return
 
-        puntos = pd.DataFrame(
-            [{"lat": lat, "lon": lon, "color": "#1565C0", "size": 60}]
-            + [{"lat": t["lat"], "lon": t["lon"],
-                "color": "#2E7D32" if t["cadena"] or t["tipo"] == "Mercado" else "#9E9E9E", "size": 30}
-               for t in tiendas[:150]]
-        )
-        st.map(puntos, latitude="lat", longitude="lon", color="color", size="size")
-        st.caption("Punto azul: tu búsqueda. Verde: supermercados y mercados. Gris: otras tiendas.")
-        st.dataframe(
-            [{"Tienda": t["nombre"], "Tipo": t["tipo"], "Cadena": t["cadena"] or "", "Distancia (km)": t["distancia_km"],
-              "Cómo llegar": u.enlace_mapa(t["lat"], t["lon"], t["nombre"])} for t in tiendas[:40]],
-            hide_index=True, width="stretch",
-            column_config={"Cómo llegar": st.column_config.LinkColumn("Cómo llegar", display_text="Abrir mapa")},
-        )
-        sugeridas = [t for t in u.tiendas_para_plan(tiendas) if t in n.TIENDAS_DISPONIBLES]
-        if sugeridas:
-            st.button(f"Usar estas tiendas en mi lista: {', '.join(sugeridas)}", on_click=usar_tiendas_cercanas,
-                      type="primary")
+    res = st.session_state["resultado"]
+    plan = res["plan"]
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Presupuesto", f"{pres:.2f} USD")
+    m2.metric("Total estimado", f"{res['total']:.2f} USD")
+    m3.metric("Te sobra", f"{res['sobrante']:.2f} USD")
+    if res["dentro_presupuesto"]:
+        st.success(plan.resumen)
+    else:
+        st.error(f"Aun ajustada, la lista cuesta {res['total']:.2f} USD y se pasa {-res['sobrante']:.2f} USD. "
+                 "Aumenta el presupuesto o pulsa «Volver a armar la lista».")
+    for a in res["avisos"]:
+        st.warning(a)
+
+    filas = n.tabla_items(plan.items)
+    st.subheader("🧾 Lista de compras por tienda")
+    st.dataframe(filas, width="stretch", hide_index=True,
+                 column_config={"Ver precio hoy": st.column_config.LinkColumn(display_text="Ver precio")})
+    st.bar_chart(n.totales_por_tienda(plan.items), horizontal=True)
+    d1, d2 = st.columns(2)
+    d1.download_button("Descargar (Excel/CSV)", csv_de(filas), "lista_compras.csv", "text/csv", width="stretch")
+    d2.download_button("Descargar para imprimir", n.plan_a_texto(res, pres).encode("utf-8"),
+                       "lista_compras.txt", "text/plain", width="stretch")
+    with st.expander("Menú de ejemplo para una semana"):
+        st.dataframe([{"Día": c.dia, "Desayuno": c.desayuno, "Almuerzo": c.almuerzo, "Merienda": c.merienda}
+                      for c in plan.menu_semana_ejemplo], width="stretch", hide_index=True)
+    st.subheader("💡 Consejos para ahorrar")
+    for c in plan.consejos:
+        st.markdown(f"- {c}")
+    st.button("🍳 ¿Qué cocino hoy con lo que tengo?", on_click=ir, args=("recetas",), width="stretch")
 
 
-def csv_de(filas: list[dict]) -> bytes:
-    buf = io.StringIO()
-    w = csv.DictWriter(buf, fieldnames=list(filas[0].keys()))
-    w.writeheader()
-    w.writerows(filas)
-    return buf.getvalue().encode("utf-8-sig")
-
-
-VALORES_INICIALES = dict(
-    presupuesto=150.0, personas=2, comidas=3, ciudad="Guayaquil, Guayas",
-    tiendas=["Mercado municipal", "Tía", "Supermaxi"], restricciones="", en_casa="", precios="",
-)
-for _k, _v in VALORES_INICIALES.items():
-    st.session_state.setdefault(f"in_{_k}", _v)
-st.session_state.setdefault("in_ingredientes", "")
-st.session_state.setdefault("in_lugar", "Guayaquil, Guayas")
-
+# ---------------------------------------------------------------------------
+# Recetas
+# ---------------------------------------------------------------------------
 
 def cargar_ejemplo_recetas():
     st.session_state["in_ingredientes"] = EJEMPLO_RECETAS
 
 
-def cargar_ejemplo():
-    for k, v in EJEMPLO.items():
-        st.session_state[f"in_{k}"] = v
-
-
-# ---------------------------------------------------------------------------
-# Cabecera y barra lateral
-# ---------------------------------------------------------------------------
-
-st.title("🛒 Canasta Inteligente")
-st.write(
-    "Dime cuánto tienes para la comida del mes y te ayudo a decidir **qué comprar, "
-    "dónde comprarlo y qué cocinar** con lo que ya tienes."
-)
-
-with st.sidebar:
-    st.header("Cómo se usa")
-    st.markdown(
-        "1. En **Mi compra del mes**, escribe tu presupuesto y cuántas personas comen.\n"
-        "2. Marca las tiendas a las que puedes ir.\n"
-        "3. Pulsa **Armar mi lista**.\n"
-        "4. En **¿Qué cocino hoy?**, escribe lo que tienes en casa y pide recetas.\n\n"
-        "¿Primera vez? Pulsa **Cargar ejemplo** para ver cómo funciona."
-    )
-    st.info(
-        "Los precios son **estimaciones** hechas por IA. Usa los enlaces **Ver precio** para confirmar el precio de hoy. "
-        "La información nutricional es aproximada y no reemplaza a un profesional de salud."
-    )
-    st.caption("No escribas datos personales: lo que ingresas se envía a la IA de Google.")
-
-tab_plan, tab_comparar, tab_recetas = st.tabs(["🧾 Mi compra del mes", "📊 Comparar precios", "🍳 ¿Qué cocino hoy?"])
-
-# ---------------------------------------------------------------------------
-# Pestaña 1: plan de compras
-# ---------------------------------------------------------------------------
-
-with tab_plan:
-    seccion_ubicacion()
-    st.button("Cargar ejemplo", on_click=cargar_ejemplo, help="Llena el formulario con un hogar de ejemplo")
-
-    with st.form("form_plan"):
-        c1, c2, c3 = st.columns(3)
-        presupuesto = c1.number_input(
-            "Presupuesto mensual para comida (USD)", min_value=0.0, max_value=10000.0,
-            step=10.0, key="in_presupuesto",
-        )
-        personas = c2.number_input("¿Cuántas personas comen?", min_value=1, max_value=15, key="in_personas")
-        comidas = c3.selectbox("Comidas al día", [2, 3, 4], key="in_comidas")
-
-        ciudad = st.text_input("Ciudad o sector (opcional)", placeholder="Ej.: Guayaquil, Guayas", key="in_ciudad")
-        tiendas = st.multiselect(
-            "¿Dónde puedes comprar?", n.TIENDAS_DISPONIBLES, key="in_tiendas",
-        )
-        restricciones = st.text_input(
-            "Preferencias o restricciones (opcional)",
-            placeholder="Ej.: vegetariano, sin lactosa, hay un bebé...", key="in_restricciones",
-        )
-        en_casa = st.text_input(
-            "¿Qué ya tienes en casa? (opcional)", placeholder="Ej.: 2 kg de arroz, aceite", key="in_en_casa",
-        )
-        precios = st.text_input(
-            "Precios que viste hoy (opcional, la lista los respetará)",
-            placeholder="Ej.: cubeta de huevos 4.50 en el mercado; arroz 5 kg 6.20 en Tía", key="in_precios",
-        )
-        enviar = st.form_submit_button("Armar mi lista", type="primary")
-
-    if enviar:
-        val = n.validar_plan(presupuesto, personas, tiendas)
-        for e in val.errores:
-            st.error(e)
-        if val.ok and puede_consultar():
-            for a in val.avisos:
-                st.warning(a)
-            cliente = obtener_cliente()
-            with st.spinner("Armando tu lista del mes… puede tardar hasta un minuto. No cierres la página."):
-                try:
-                    st.session_state["resultado"] = n.generar_plan(
-                        cliente, presupuesto, personas, comidas, ciudad, tiendas,
-                        restricciones, en_casa, precios,
-                        cercanas=u.resumen_cercanas(st.session_state.get("cercanas", [])),
-                    )
-                    st.session_state["presupuesto_usado"] = presupuesto
-                except n.ErrorIA as e:
-                    st.error(str(e))
-
-    res = st.session_state.get("resultado")
-    if res:
-        plan = res["plan"]
-        pres = st.session_state["presupuesto_usado"]
-        st.divider()
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Presupuesto", f"{pres:.2f} USD")
-        m2.metric("Total estimado", f"{res['total']:.2f} USD")
-        m3.metric("Te sobra", f"{res['sobrante']:.2f} USD")
-
-        if res["dentro_presupuesto"]:
-            st.success(plan.resumen)
-        else:
-            st.error(
-                f"Aun después de ajustarla, la lista cuesta {res['total']:.2f} USD y se pasa "
-                f"{-res['sobrante']:.2f} USD de tu presupuesto. Quita productos de la tabla o "
-                "aumenta el presupuesto."
-            )
-        if res["corregido"] and res["dentro_presupuesto"]:
-            st.caption("La primera propuesta se pasaba del presupuesto; la app pidió a la IA que la ajustara.")
-        for a in res["avisos"]:
-            st.warning(a)
-
-        filas = n.tabla_items(plan.items)
-        st.subheader("Lista de compras por tienda")
-        st.caption("Los precios son estimados. Pulsa **Ver precio** para revisar el precio de hoy en la tienda.")
-        st.dataframe(
-            filas, width="stretch", hide_index=True,
-            column_config={"Ver precio hoy": st.column_config.LinkColumn("Ver precio hoy", display_text="Ver precio")},
-        )
-
-        st.subheader("Cuánto gastarás en cada tienda")
-        st.bar_chart(n.totales_por_tienda(plan.items), horizontal=True)
-
-        d1, d2 = st.columns(2)
-        d1.download_button("Descargar lista (Excel/CSV)", csv_de(filas), "lista_compras.csv", "text/csv")
-        d2.download_button(
-            "Descargar lista para imprimir (TXT)", n.plan_a_texto(res, pres).encode("utf-8"),
-            "lista_compras.txt", "text/plain",
-        )
-
-        with st.expander("Menú de ejemplo para una semana"):
-            st.dataframe(
-                [{"Día": c.dia, "Desayuno": c.desayuno, "Almuerzo": c.almuerzo, "Merienda": c.merienda}
-                 for c in plan.menu_semana_ejemplo],
-                width="stretch", hide_index=True,
-            )
-        st.subheader("Consejos para ahorrar")
-        for c in plan.consejos:
-            st.markdown(f"- {c}")
-
-# ---------------------------------------------------------------------------
-# Pestaña 2: comparar precios entre tiendas
-# ---------------------------------------------------------------------------
-
-with tab_comparar:
-    st.subheader("📊 ¿Dónde está más barato?")
-    st.write(
-        "Elige productos y tiendas, y la app te muestra el precio **estimado** de cada uno en cada tienda, "
-        "cuál es la más barata y cuánto ahorras. Usa los enlaces **Ver precio** para confirmar el de hoy."
-    )
-    with st.form("form_comparar"):
-        prod = st.multiselect(
-            f"Productos (máximo {n.MAX_PRODUCTOS_COMPARAR})", n.PRODUCTOS_COMUNES,
-            default=["Arroz", "Aceite", "Huevos", "Pollo entero", "Atún en lata", "Leche", "Azúcar", "Lenteja"],
-            accept_new_options=True, key="cmp_productos",
-        )
-        tiendas_cmp = st.multiselect(
-            "Tiendas a comparar", n.TIENDAS_DISPONIBLES,
-            default=["Mercado municipal", "Tía", "Mi Comisariato", "Supermaxi", "Akí / Gran Akí"], key="cmp_tiendas",
-        )
-        c1, c2 = st.columns(2)
-        ciudad_cmp = c1.text_input("Ciudad (opcional)", value="Guayaquil, Guayas", key="cmp_ciudad")
-        vistos = c2.text_input("Precios que viste hoy (opcional)", placeholder="Ej.: huevos 4.50 en el mercado",
-                               key="cmp_vistos")
-        comparar = st.form_submit_button("Comparar precios", type="primary")
-
-    if comparar:
-        val = n.validar_comparacion(prod, tiendas_cmp)
-        for e in val.errores:
-            st.error(e)
-        if val.ok and puede_consultar():
-            cliente = obtener_cliente()
-            with st.spinner("Comparando precios… puede tardar unos 30 segundos"):
-                try:
-                    comp, _ = n.comparar_precios(cliente, prod, tiendas_cmp, ciudad_cmp, vistos)
-                    st.session_state["comparacion"] = (comp, list(tiendas_cmp))
-                except n.ErrorIA as e:
-                    st.error(str(e))
-
-    if st.session_state.get("comparacion"):
-        comp, tiendas_c = st.session_state["comparacion"]
-        filas, totales, ganadas = n.tabla_comparacion(comp, tiendas_c)
-        campeona = max(ganadas, key=ganadas.get)
-        completos = {t: v for t, v in totales.items() if v > 0}
-        m = st.columns(min(len(completos), 4) or 1)
-        for i, (t, v) in enumerate(sorted(completos.items(), key=lambda kv: kv[1])[:4]):
-            barata = i == 0
-            m[i].metric(t, f"{v:.2f} USD", "la más barata" if barata else f"+{v - min(completos.values()):.2f} USD",
-                        delta_color="normal" if barata else "inverse")
-        if completos:
-            st.caption("Total de los productos que venden todas las tiendas elegidas (precios estimados).")
-        st.success(f"**{campeona}** es la más barata en {ganadas[campeona]} de {len(filas)} productos. {comp.nota}")
-        st.dataframe(
-            filas, hide_index=True, width="stretch",
-            column_config={t: st.column_config.NumberColumn(t, format="$%.2f") for t in tiendas_c}
-            | {"Ahorro vs. más caro": st.column_config.NumberColumn(format="$%.2f")},
-        )
-        with st.expander("Ver precio de hoy en cada tienda"):
-            for f in filas:
-                enlaces = " · ".join(f"[{t}]({u.enlace_precio(f['Producto'], t)})" for t in tiendas_c)
-                st.markdown(f"**{f['Producto']}** ({f['Presentación']}): {enlaces}")
-        st.download_button("Descargar comparación (CSV)", csv_de(filas), "comparacion_precios.csv", "text/csv")
-
-# ---------------------------------------------------------------------------
-# Pestaña 3: recetas con lo que hay en casa
-# ---------------------------------------------------------------------------
-
-with tab_recetas:
+def pagina_recetas():
+    st.button("← Volver", on_click=ir, args=(1,))
+    st.subheader("🍳 ¿Qué cocino hoy?")
     st.button("Usar ingredientes de ejemplo", on_click=cargar_ejemplo_recetas)
-
     with st.form("form_recetas"):
-        ingredientes = st.text_area(
-            "¿Qué tienes en la cocina? Sepáralo con comas",
-            placeholder="Ej.: arroz, huevos, verde, cebolla, tomate", key="in_ingredientes",
-        )
+        ingredientes = st.text_area("¿Qué tienes en la cocina? Sepáralo con comas",
+                                    placeholder="Ej.: arroz, huevos, verde, cebolla, tomate", key="in_ingredientes")
         r1, r2 = st.columns(2)
-        personas_r = r1.number_input("¿Para cuántas personas?", min_value=1, max_value=15, value=2)
-        restr_r = r2.text_input("Preferencias o restricciones (opcional)", placeholder="Ej.: sin picante")
+        personas_r = r1.number_input("¿Para cuántas personas?", min_value=1, max_value=15,
+                                     value=int(st.session_state["personas"]))
+        restr_r = r2.text_input("Preferencias (opcional)", placeholder="Ej.: sin picante")
         pedir = st.form_submit_button("Dame recetas", type="primary")
-
     if pedir:
         val = n.validar_recetas(ingredientes)
         for e in val.errores:
@@ -406,35 +420,37 @@ with tab_recetas:
             for a in val.avisos:
                 st.warning(a)
             cliente = obtener_cliente()
-            with st.spinner("Buscando recetas con lo que tienes..."):
+            with st.spinner("Buscando recetas con lo que tienes…"):
                 try:
                     st.session_state["recetas"], _ = n.generar_recetas(cliente, ingredientes, personas_r, restr_r)
                 except n.ErrorIA as e:
                     st.error(str(e))
-
     rec = st.session_state.get("recetas")
     if rec:
         if rec.aviso:
             st.warning(rec.aviso)
-        if not rec.recetas and not rec.aviso:
-            st.warning("No se encontraron recetas con esos ingredientes. Prueba agregando más.")
         for r in rec.recetas:
             with st.container(border=True):
                 st.subheader(r.nombre)
                 a, b, c = st.columns(3)
                 a.metric("Porciones", r.porciones)
                 b.metric("Tiempo", f"{r.tiempo_minutos} min")
-                c.metric("Por porción", f"~{r.calorias_aprox_por_porcion} kcal · {r.proteina_g_aprox_por_porcion} g prot.")
+                c.metric("Por porción", f"~{r.calorias_aprox_por_porcion} kcal")
                 st.markdown("**Usas lo que tienes:** " + ", ".join(r.ingredientes_que_tienes))
                 if r.ingredientes_faltantes:
-                    st.markdown(
-                        f"**Te falta comprar (~{r.costo_faltantes_usd:.2f} USD):** "
-                        + ", ".join(r.ingredientes_faltantes)
-                    )
-                st.markdown("**Preparación:**")
-                for i, paso in enumerate(r.pasos, 1):
-                    st.markdown(f"{i}. {paso}")
-                st.caption("💚 " + r.por_que_es_nutritiva)
+                    st.markdown(f"**Te falta comprar (~{r.costo_faltantes_usd:.2f} USD):** "
+                                + ", ".join(r.ingredientes_faltantes))
+                for i, p in enumerate(r.pasos, 1):
+                    st.markdown(f"{i}. {p}")
+                st.caption(f"💚 {r.por_que_es_nutritiva} · {r.proteina_g_aprox_por_porcion} g de proteína por porción")
+
+
+# ---------------------------------------------------------------------------
+# Router
+# ---------------------------------------------------------------------------
+
+{1: paso_inicio, 2: paso_tiendas, 3: paso_lista, "recetas": pagina_recetas}.get(paso, paso_inicio)()
 
 st.divider()
-st.caption("Canasta Inteligente · Proyecto académico · IA: Google Gemini · Precios y valores nutricionales aproximados.")
+st.caption("Canasta Inteligente · Proyecto académico · IA: Google Gemini · Mapa: © OpenStreetMap · "
+           "Precios y valores nutricionales aproximados.")

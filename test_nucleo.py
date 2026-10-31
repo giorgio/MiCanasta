@@ -81,3 +81,14 @@ assert gan == {"Tía": 1, "Mercado municipal": 1}
 r, _ = n.comparar_precios(Fake([comp]), ["Arroz", "Atún"], ["Tía", "Mercado municipal"])
 assert len(r.filas) == 2
 print("COMPARADOR OK")
+
+# tiendas sin precio quedan fuera
+comp2 = n.Comparacion(nota="", filas=[
+    n.FilaComparacion(producto="Arroz", presentacion="1 kg", precios=[P(tienda="Tía", precio_usd=1.0), P(tienda="Supermaxi", precio_usd=1.2), P(tienda="Tienda de barrio", precio_usd=0)]),
+    n.FilaComparacion(producto="Leche", presentacion="1 l", precios=[P(tienda="Tía", precio_usd=0.9), P(tienda="Supermaxi", precio_usd=0), P(tienda="Tienda de barrio", precio_usd=0)]),
+])
+assert n.tiendas_con_precio(comp2, ["Tía", "Supermaxi", "Tienda de barrio"]) == ["Tía", "Supermaxi"]
+r2 = n.resumen_por_tienda(comp2, ["Tía", "Supermaxi"])
+assert r2["Tía"] == {"total": 1.9, "con_precio": 2, "productos": 2} and r2["Supermaxi"]["con_precio"] == 1
+assert "Tienda de barrio" not in n.precios_como_texto(comp2, ["Tía", "Supermaxi"])
+print("TIENDAS SIN PRECIO OK")

@@ -144,6 +144,17 @@ def tiendas_cercanas(lat: float, lon: float, radio_km: float = 5) -> list[dict]:
     return tiendas
 
 
+def categoria(t: dict) -> str | None:
+    """Tipo de tienda para comparar precios (cadena, mercado o tienda de barrio)."""
+    if t["cadena"]:
+        return t["cadena"]
+    if t["tipo"] == "Mercado":
+        return "Mercado mayorista" if "mayorista" in t["nombre"].lower() else "Mercado municipal"
+    if t["tipo"] in ("Tienda de barrio", "Frutas y verduras", "Carnicería"):
+        return "Tienda de barrio"
+    return None
+
+
 def tiendas_para_plan(tiendas: list[dict]) -> list[str]:
     """Convierte lo que hay cerca en las opciones de tienda del formulario."""
     opciones = []
@@ -182,3 +193,9 @@ def enlace_precio(producto: str, tienda: str) -> str:
 
 def enlace_mapa(lat: float, lon: float, nombre: str) -> str:
     return f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+
+
+def zoom_para_radio(lat: float, radio_km: float, ancho_px: int = 700) -> float:
+    """Nivel de zoom para que el círculo del radio quepa en el mapa."""
+    metros_por_px = (2 * radio_km * 1000 * 1.15) / ancho_px
+    return max(3.0, min(17.0, math.log2(156543.03 * math.cos(math.radians(lat)) / metros_por_px)))

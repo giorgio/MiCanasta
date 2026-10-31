@@ -33,7 +33,10 @@ ROJO = [211, 47, 47]
 CANASTA_BASE = ["Arroz", "Aceite", "Huevos", "Pollo entero", "Atún en lata", "Leche", "Azúcar", "Lenteja"]
 EJEMPLO_RECETAS = "arroz, huevos, verde, cebolla, tomate, atún en lata, queso"
 ESPERA_ENTRE_CONSULTAS = 8  # segundos, para cuidar la cuota gratuita
-MAX_TIENDAS_COMPARAR = 6
+MAX_TIENDAS_COMPARAR = 8
+# Si están dentro del radio, estas siempre entran en la comparación (en este orden).
+PRIORIDAD = ["Supermaxi", "Mi Comisariato", "Tía", "Akí / Gran Akí", "TuTi", "Mercado municipal",
+             "Coral Hipermercados", "Santa María", "Megamaxi", "Hipermarket", "Mercado mayorista", "Tienda de barrio"]
 
 INICIALES = {
     "paso": 1, "presupuesto": 150.0, "personas": 2, "ciudad": "Guayaquil, Guayas",
@@ -86,7 +89,7 @@ def puede_consultar() -> bool:
 
 def alto(filas: list) -> int:
     """Altura para mostrar la tabla completa, sin barra de desplazamiento."""
-    return 38 + 35 * max(len(filas), 1) + 3
+    return 36 + 35 * max(len(filas), 1)
 
 
 def csv_de(filas: list[dict]) -> bytes:
@@ -219,11 +222,13 @@ def ubicar():
 
 def comparar_cercanas(tiendas: list[dict]):
     """Compara los productos elegidos en los tipos de tienda que hay cerca."""
-    categorias = []
+    cerca = []
     for t in tiendas:  # ya vienen ordenadas por distancia
         c = u.categoria(t)
-        if c and c not in categorias and c in n.TIENDAS_DISPONIBLES:
-            categorias.append(c)
+        if c and c not in cerca and c in n.TIENDAS_DISPONIBLES:
+            cerca.append(c)
+    # primero las cadenas grandes, luego el resto por cercanía
+    categorias = [c for c in PRIORIDAD if c in cerca] + [c for c in cerca if c not in PRIORIDAD]
     categorias = categorias[:MAX_TIENDAS_COMPARAR]
     clave = (tuple(st.session_state["productos"]), tuple(categorias), st.session_state["ciudad"])
     previa = st.session_state.get("comparacion")
@@ -296,7 +301,9 @@ def paso_tiendas():
     st.dataframe(
         filas, hide_index=True, width="stretch", height=alto(filas),
         column_config={t: st.column_config.NumberColumn(t, format="$%.2f") for t in cats}
-        | {"Producto": st.column_config.TextColumn(width="medium")}
+        | {"Producto": st.column_config.TextColumn(width="small"),
+           "Presentación": st.column_config.TextColumn(width="small"),
+           "Más barato en": st.column_config.TextColumn(width="small")}
         | {"Ahorro vs. más caro": st.column_config.NumberColumn(format="$%.2f")},
     )
 

@@ -1,4 +1,4 @@
-# AGENTS.md — Canasta Inteligente
+# AGENTS.md — Canastas
 
 Contexto para cualquier agente de programación (Claude, Gemini, Copilot…) que trabaje en este repositorio.
 

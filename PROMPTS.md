@@ -1,4 +1,4 @@
-# Prompts de Canasta Inteligente
+# Prompts de Canastas
 
 Los prompts viven en `nucleo.py` como plantillas reutilizables (`str.format`). Aquí se documentan y se explica por qué están escritos así.
 

@@ -10,6 +10,9 @@ por eso los resultados se guardan en caché.
 from __future__ import annotations
 
 import math
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeout
 from urllib.parse import quote_plus
 
 import requests
@@ -99,27 +102,82 @@ def geocodificar(lugar: str) -> tuple[float, float, str]:
 def _consulta(lat: float, lon: float, radio_m: int) -> str:
     alrededor = f"around:{radio_m},{lat},{lon}"
     return (
-        "[out:json][timeout:25];("
+        "[out:json][timeout:15];("
         f'nwr({alrededor})["shop"~"^(supermarket|convenience|greengrocer|butcher)$"];'
         f'nwr({alrededor})["amenity"="marketplace"];'
         ");out center 200;"
     )
 
 
+# Plan B: Nominatim busca por tipo de tienda y por nombre de cadena dentro del radio.
+BUSQUEDAS_NOMINATIM = ["supermarket", "marketplace", "Tía", "Mi Comisariato", "Supermaxi", "Akí", "TuTi"]
+TIPO_NOMINATIM = {"supermarket": "supermarket", "convenience": "convenience", "greengrocer": "greengrocer",
+                  "butcher": "butcher", "marketplace": "marketplace", "mall": None}
+
+
+def _buscar_con_nominatim(lat: float, lon: float, radio_km: float) -> list[dict]:
+    """Devuelve elementos con la misma forma que Overpass (lat, lon, tags)."""
+    dlat = radio_km / 111.0
+    dlon = radio_km / (111.0 * max(math.cos(math.radians(lat)), 0.2))
+    caja = f"{lon - dlon},{lat + dlat},{lon + dlon},{lat - dlat}"
+    vistos, elementos = set(), []
+    for i, termino in enumerate(BUSQUEDAS_NOMINATIM):
+        if i:
+            time.sleep(1.05)  # política de uso de Nominatim: máximo 1 consulta por segundo
+        try:
+            r = requests.get(
+                NOMINATIM,
+                params={"q": termino, "format": "jsonv2", "limit": 40, "viewbox": caja, "bounded": 1,
+                        "countrycodes": "ec"},
+                headers={"User-Agent": USER_AGENT}, timeout=10,
+            )
+            r.raise_for_status()
+            resultados = r.json()
+        except (requests.RequestException, ValueError):
+            continue
+        for d in resultados:
+            clave = (d.get("osm_type"), d.get("osm_id"))
+            tipo = TIPO_NOMINATIM.get(d.get("type"), "supermarket" if d.get("category") == "shop" else None)
+            if clave in vistos or not tipo:
+                continue
+            vistos.add(clave)
+            etiqueta = "amenity" if tipo == "marketplace" else "shop"
+            elementos.append({"lat": float(d["lat"]), "lon": float(d["lon"]),
+                              "tags": {etiqueta: tipo, "name": d.get("name") or ""}})
+    return elementos
+
+
 def tiendas_cercanas(lat: float, lon: float, radio_km: float = 5) -> list[dict]:
     """Lista de tiendas reales cerca del punto, ordenadas por distancia."""
     consulta = _consulta(lat, lon, int(radio_km * 1000))
-    ultimo = None
-    for url in OVERPASS:
-        try:
-            r = requests.post(url, data={"data": consulta}, headers={"User-Agent": USER_AGENT}, timeout=30)
-            r.raise_for_status()
-            elementos = r.json().get("elements", [])
-            break
-        except (requests.RequestException, ValueError) as e:
-            ultimo = e
+
+    def pedir(url):
+        r = requests.post(url, data={"data": consulta}, headers={"User-Agent": USER_AGENT}, timeout=12)
+        r.raise_for_status()
+        return r.json().get("elements", [])
+
+    # 1) Nominatim (rápido y estable): busca por tipo de tienda y por nombre de cadena.
+    elementos = _buscar_con_nominatim(lat, lon, radio_km)
+    if elementos:
+        pass
     else:
-        raise ErrorMapa("El servicio de mapas no respondió. Puedes seguir eligiendo tus tiendas a mano.") from ultimo
+        # 2) Respaldo: Overpass, consultando a todos sus servidores a la vez.
+        ultimo = None
+        pool = ThreadPoolExecutor(max_workers=len(OVERPASS))
+        futuros = [pool.submit(pedir, url) for url in OVERPASS]
+        try:
+            for f in as_completed(futuros, timeout=14):
+                try:
+                    elementos = f.result()
+                    break
+                except (requests.RequestException, ValueError) as e:
+                    ultimo = e
+        except FuturesTimeout as e:
+            ultimo = e
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+        if not elementos:
+            raise ErrorMapa("El servicio de mapas no respondió. Intenta de nuevo en un momento.") from ultimo
 
     tiendas = []
     for el in elementos:

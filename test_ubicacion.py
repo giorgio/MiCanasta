@@ -24,19 +24,33 @@ FAKE = {"elements": [
     {"type": "node", "lat": -2.902, "lon": -79.812, "tags": {"shop": "convenience"}},
     {"type": "node", "tags": {"shop": "butcher"}},  # sin coordenadas: se descarta
 ]}
-llamadas = []
-def post_falla_luego_ok(url, **k):
-    llamadas.append(url)
-    return R({}, 504) if len(llamadas) == 1 else R(FAKE)
-u.requests.post = post_falla_luego_ok
-t = u.tiendas_cercanas(-2.903, -79.811, 5)
-assert len(llamadas) == 2, "debe probar el servidor de respaldo"
+import time as _t
+def post_primero_falla(url, **k):
+    if url == u.OVERPASS[0]:
+        return R({}, 504)            # el servidor principal falla
+    if url == u.OVERPASS[1]:
+        _t.sleep(0.3)                # este es lento
+    return R(FAKE)
+u.requests.post = post_primero_falla
+u.requests.get = lambda *a, **k: R([])
+u.time.sleep = lambda s: None
+t = u.tiendas_cercanas(-2.903, -79.811, 5)  # debe usar uno de respaldo
 assert [x["nombre"] for x in t] == ["Tienda de barrio", "Tía Balao", "Mercado Municipal de Balao"], t
 assert u.tiendas_para_plan(t) == ["Tienda de barrio", "Tía", "Mercado municipal"]
 assert "Tía Balao" in u.resumen_cercanas(t)
 
 def post_siempre_falla(url, **k): raise u.requests.ConnectionError("sin red")
 u.requests.post = post_siempre_falla
+u.time.sleep = lambda s: None
+# Nominatim es la búsqueda principal
+NOMI = [{"osm_type": "node", "osm_id": 1, "lat": "-2.17", "lon": "-79.90", "name": "Supermaxi Urdesa", "category": "shop", "type": "supermarket"},
+        {"osm_type": "way", "osm_id": 2, "lat": "-2.18", "lon": "-79.89", "name": "Mercado Central", "category": "amenity", "type": "marketplace"},
+        {"osm_type": "node", "osm_id": 3, "lat": "-2.17", "lon": "-79.90", "name": "Banco", "category": "amenity", "type": "bank"}]
+u.requests.get = lambda *a, **k: R(NOMI)
+tb = u.tiendas_cercanas(-2.171, -79.901, 3)
+assert sorted(x["nombre"] for x in tb) == ["Mercado Central", "Supermaxi Urdesa"], tb
+assert {x["cadena"] for x in tb} == {"Supermaxi", None}
+u.requests.get = lambda *a, **k: R([])
 try: u.tiendas_cercanas(0, 0); raise SystemExit("debió fallar")
 except u.ErrorMapa: pass
 

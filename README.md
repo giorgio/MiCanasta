@@ -1,8 +1,8 @@
-# 🛒 Canasta Inteligente
+# 🛒 Canastas
 
 Aplicación web que ayuda a una familia a **estirar su presupuesto mensual de comida**: le dices cuánto tienes, cuántas personas comen y en qué tiendas puedes comprar, y te devuelve **qué comprar, en qué tienda y cuánto gastarás**. Además, en una segunda pestaña te propone **recetas nutritivas con lo que ya tienes en la cocina**.
 
-- **App desplegada:** _pega aquí el enlace de Streamlit Community Cloud_
+- **App desplegada:** https://canastas.streamlit.app
 - **Autor:** Jorge Recabarren
 - **IA usada:** Google Gemini (`gemini-3.8-flash`, con `gemini-3.5-flash-lite` como respaldo)
 

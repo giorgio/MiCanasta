@@ -1,4 +1,4 @@
-"""Canasta Inteligente: plan de compras mensual, tiendas cercanas y recetas con IA.
+"""Canastas: plan de compras mensual, tiendas cercanas y recetas con IA.
 
 Flujo en pasos:
   1. Inicio: presupuesto, personas y ciudad.
@@ -26,7 +26,7 @@ try:  # componente para leer el GPS del navegador
 except Exception:  # noqa: BLE001
     get_geolocation = None
 
-st.set_page_config(page_title="Canasta Inteligente", page_icon="🛒", layout="centered")
+st.set_page_config(page_title="Canastas", page_icon="🛒", layout="centered")
 
 VERDE = [46, 125, 50]
 ROJO = [211, 47, 47]
@@ -138,7 +138,7 @@ def mapa_fijo(lat: float, lon: float, radio_km: float, tiendas: list[dict]):
 # Cabecera
 # ---------------------------------------------------------------------------
 
-st.title("🛒 Canasta Inteligente")
+st.title("🛒 Canastas")
 
 paso = st.session_state["paso"]
 if paso in (1, 2, 3):
@@ -262,7 +262,7 @@ def paso_tiendas():
     lat, lon, nombre = st.session_state["punto"]
     radio = st.session_state["radio"]
     try:
-        with st.spinner("Buscando tiendas cercanas…"):
+        with st.spinner("Buscando tiendas cercanas en el mapa…"):
             cercanas = buscar_cercanas(round(lat, 4), round(lon, 4), float(radio))
     except u.ErrorMapa as e:
         st.error(str(e))
@@ -452,5 +452,5 @@ def pagina_recetas():
 {1: paso_inicio, 2: paso_tiendas, 3: paso_lista, "recetas": pagina_recetas}.get(paso, paso_inicio)()
 
 st.divider()
-st.caption("Canasta Inteligente · Proyecto académico · IA: Google Gemini · Mapa: © OpenStreetMap · "
+st.caption("Canastas · Proyecto académico · IA: Google Gemini · Mapa: © OpenStreetMap · "
            "Precios y valores nutricionales aproximados.")

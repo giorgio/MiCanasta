@@ -1,4 +1,4 @@
-"""Lógica de la app Canasta Inteligente (sin interfaz).
+"""Lógica de la app Canastas (sin interfaz).
 
 Aquí viven los modelos de datos, los prompts, la llamada a Gemini,
 las validaciones y los cálculos. app.py solo dibuja la interfaz.
@@ -499,7 +499,7 @@ def precios_como_texto(comp: Comparacion, tiendas: list[str]) -> str:
 def plan_a_texto(resultado: dict, presupuesto: float) -> str:
     plan: PlanCompras = resultado["plan"]
     lineas = [
-        "CANASTA INTELIGENTE - Lista de compras del mes",
+        "CANASTAS - Lista de compras del mes",
         f"Presupuesto: {presupuesto:.2f} USD | Total estimado: {resultado['total']:.2f} USD | "
         f"Sobrante: {resultado['sobrante']:.2f} USD",
         "Precios estimados: confírmalos en la tienda.",

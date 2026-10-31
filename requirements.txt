@@ -1,0 +1,6 @@
+streamlit>=1.50
+google-genai>=2.0
+pydantic>=2.7
+requests>=2.31
+streamlit-js-eval>=1.0
+pandas>=2.0

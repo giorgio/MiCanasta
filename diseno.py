@@ -59,7 +59,26 @@ header[data-testid="stHeader"] {{ background: transparent; }}
 .cn-paso.activo {{ color:{TEXTO}; font-weight:700; }}
 .cn-paso.activo .cn-num {{ background:{AZUL}; border-color:{AZUL}; color:#fff; }}
 .cn-paso.hecho .cn-num {{ background:{AZUL_CLARO}; border-color:{AZUL_CLARO}; color:{AZUL}; }}
-.cn-linea {{ flex:1; height:1px; background:#D9DFD4; min-width:18px; }}
+.cn-linea {{ height:1px; background:#D9DFD4; width:100%; }}
+.st-key-pasos {{ margin:.2rem 0 1.4rem; }}
+.st-key-pasos [data-testid="stHorizontalBlock"] {{ flex-wrap:nowrap !important; flex-direction:row !important; }}
+.st-key-pasos [data-testid="stColumn"] {{ min-width:0 !important; }}
+[class*="st-key-paso_"] button {{ background:transparent !important; border:none !important; box-shadow:none !important;
+  padding:.2rem .3rem !important; min-height:auto !important; gap:.6rem; justify-content:flex-start; width:100%; }}
+[class*="st-key-paso_"] button p {{ font-size:.98rem; color:{GRIS}; white-space:nowrap; }}
+[class*="st-key-paso_"] button::before {{ width:30px; height:30px; flex:none; border-radius:50%; border:1.5px solid #CFD6CB;
+  display:grid; place-items:center; font-size:.85rem; font-weight:600; color:{GRIS}; background:#fff; }}
+.st-key-paso_1_activo button::before, .st-key-paso_1_pend button::before {{ content:"1"; }}
+.st-key-paso_2_activo button::before, .st-key-paso_2_pend button::before {{ content:"2"; }}
+.st-key-paso_3_activo button::before, .st-key-paso_3_pend button::before {{ content:"3"; }}
+[class*="st-key-paso_"][class*="_hecho"] button::before {{ content:"✓"; background:{AZUL_CLARO}; border-color:{AZUL_CLARO}; color:{AZUL}; }}
+[class*="st-key-paso_"][class*="_activo"] button::before {{ background:{AZUL}; border-color:{AZUL}; color:#fff; }}
+[class*="st-key-paso_"][class*="_activo"] button p {{ color:{TEXTO}; font-weight:700; }}
+[class*="st-key-paso_"][class*="_hecho"] button p {{ color:{AZUL}; font-weight:600; }}
+[class*="st-key-paso_"][class*="_hecho"] button:hover p, [class*="st-key-paso_"][class*="_pend"] button:not(:disabled):hover p {{
+  text-decoration:underline; text-underline-offset:3px; }}
+[class*="st-key-paso_"] button:disabled {{ opacity:.55; cursor:not-allowed; }}
+[class*="st-key-paso_"][class*="_activo"] button:disabled {{ opacity:1; cursor:default; }}
 
 /* Tarjeta blanca principal */
 .st-key-tarjeta {{ background:#fff; border-radius:22px !important; padding:2rem 2.2rem !important;
@@ -113,8 +132,8 @@ header[data-testid="stHeader"] {{ background: transparent; }}
 @media (max-width: 640px) {{
   .cn-lema {{ display:none; }}
   .cn-cabecera {{ margin-bottom:1.4rem; }}
-  .cn-paso .txt {{ display:none; }}
-  .cn-paso.activo .txt {{ display:inline; }}
+  [class*="st-key-paso_"]:not([class*="_activo"]) button p {{ display:none; }}
+  .st-key-pasos [data-testid="stColumn"] {{ width:auto !important; flex:1 1 auto !important; }}
   .st-key-tarjeta {{ padding:1.3rem 1.1rem !important; }}
   .st-key-w_pres input {{ font-size:2rem !important; }}
   .cn-menu-nota, .cn-menu-ceja, .st-key-menu hr, .st-key-menu [data-testid="stCaptionContainer"] {{ display:none; }}
@@ -174,16 +193,20 @@ def titulo(ceja: str, texto: str, sub: str = ""):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def pasos(activo: int):
+def pasos(activo: int, ir=None, habilitados=(1,)):
+    """Indicador de pasos; cada paso es un botón para ir directo a él."""
     nombres = ["Tus datos", "Tus tiendas", "Tu canasta"]
-    partes = []
-    for i, nombre in enumerate(nombres, 1):
-        estado = "activo" if i == activo else ("hecho" if i < activo else "")
-        num = "✓" if i < activo else str(i)
-        partes.append(f'<div class="cn-paso {estado}"><span class="cn-num">{num}</span>'
-                      f'<span class="txt">{nombre}</span></div>')
-    st.markdown('<div class="cn-pasos">' + '<div class="cn-linea"></div>'.join(partes) + "</div>",
-                unsafe_allow_html=True)
+    with st.container(key="pasos"):
+        cols = st.columns([1.15, 1, 1.25, 1, 1.25], vertical_alignment="center", gap="small")
+        for i, nombre in enumerate(nombres, 1):
+            estado = "activo" if i == activo else ("hecho" if i < activo else "pend")
+            with cols[(i - 1) * 2]:
+                with st.container(key=f"paso_{i}_{estado}"):
+                    st.button(nombre, key=f"ir_paso_{i}", on_click=ir, args=(i,),
+                              disabled=(ir is None or (i not in habilitados and i != activo)),
+                              help=None if i == activo else f"Ir a: {nombre}")
+            if i < 3:
+                cols[i * 2 - 1].markdown('<div class="cn-linea"></div>', unsafe_allow_html=True)
 
 
 def pie_paso(texto: str):

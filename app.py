@@ -65,6 +65,16 @@ def ir(paso):
     st.session_state["paso"] = paso
 
 
+def pasos_habilitados() -> tuple:
+    """A qué pasos se puede ir con un clic: los que ya tienen sus datos."""
+    hab = [1]
+    if st.session_state.get("paso1_ok"):
+        hab.append(2)
+    if st.session_state.get("comparacion"):
+        hab.append(3)
+    return tuple(hab)
+
+
 def obtener_cliente():
     try:
         clave = st.secrets["GEMINI_API_KEY"]
@@ -163,7 +173,7 @@ def paso_inicio():
              "Dinos cuánto puedes gastar en comida este mes.<br>"
              "Después elegiremos las tiendas donde puedes comprar.")
     with st.container(border=True, key="tarjeta"):
-        d.pasos(1)
+        d.pasos(1, ir, pasos_habilitados())
         with st.form("form_inicio", border=False):
             with st.container(key="caja_presupuesto"):
                 st.markdown("#### ¿Cuál es tu presupuesto mensual?")
@@ -192,7 +202,7 @@ def paso_inicio():
         for e in val.errores:
             st.error(e)
         if val.ok:
-            st.session_state.update(presupuesto=pres, personas=pers, ciudad=ciudad.strip())
+            st.session_state.update(presupuesto=pres, personas=pers, ciudad=ciudad.strip(), paso1_ok=True)
             for k in ("punto", "comparacion", "resultado", "recetario"):
                 st.session_state.pop(k, None)
             ir(2)
@@ -255,14 +265,14 @@ def comparar_cercanas(tiendas: list[dict]):
     datos = {"clave": clave, "comp": comp, "categorias": categorias,
              "con_precio": n.tiendas_con_precio(comp, categorias)}
     st.session_state["comparacion"] = datos
-    return datos
+    st.rerun()  # redibuja la página para habilitar el paso 3 en el indicador
 
 
 def paso_tiendas():
     d.titulo("Encuentra lo más barato", "Tus tiendas cercanas.",
              "Comparamos tus productos en los supermercados y mercados que tienes cerca.")
     with st.container(border=True, key="tarjeta"):
-        d.pasos(2)
+        d.pasos(2, ir, pasos_habilitados())
         st.session_state["productos"] = st.multiselect(
             "¿Qué productos quieres comparar?", n.PRODUCTOS_COMUNES, default=st.session_state["productos"],
             accept_new_options=True, max_selections=n.MAX_PRODUCTOS_COMPARAR)
@@ -274,7 +284,6 @@ def paso_tiendas():
         if c2.button("Usar mi ubicación (GPS)", icon=":material/my_location:", disabled=get_geolocation is None,
                      width="stretch"):
             st.session_state["pedir_gps"] = True
-        st.button("Cambiar mis datos", icon=":material/arrow_back:", on_click=ir, args=(1,), type="tertiary")
     if not st.session_state["productos"]:
         st.warning("Elige al menos un producto para comparar.")
         return
@@ -349,8 +358,7 @@ def paso_lista():
              f"{pres:.2f} USD para {personas} persona(s) en {st.session_state['ciudad']}.<br>"
              f"Tiendas: {', '.join(tiendas)}.")
     with st.container(border=True, key="tarjeta"):
-        d.pasos(3)
-        st.button("Volver a las tiendas", icon=":material/arrow_back:", on_click=ir, args=(2,), type="tertiary")
+        d.pasos(3, ir, pasos_habilitados())
 
     with st.expander("Ajustar mi lista (opcional)"):
         st.session_state["comidas"] = st.selectbox("Comidas al día", [2, 3, 4],
